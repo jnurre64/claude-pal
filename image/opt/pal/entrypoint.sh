@@ -235,6 +235,41 @@ if ! run_post_impl_review; then
     fi
 fi
 
-# Placeholder for now so the skeleton runs to completion
+STATUS_PHASE="pushing_pr"
+
+# Push branch
+if ! git -C "$WORKTREE_DIR" push -u origin "$BRANCH_NAME"; then
+    STATUS_FAILURE_REASON="git_push_failed"
+    exit 1
+fi
+log "pushed branch $BRANCH_NAME"
+
+if [ "$EVENT_TYPE" = "revise" ]; then
+    # No new PR; the existing PR picks up the push
+    STATUS_PR_NUMBER="$NUMBER"
+    existing_pr_url=$(gh pr view "$NUMBER" --repo "$REPO" --json url --jq .url)
+    STATUS_PR_URL="\"$existing_pr_url\""
+    log "revise: new commits pushed to existing PR #$NUMBER"
+else
+    # Create PR
+    local_pr_title="${AGENT_ISSUE_TITLE:-claude-pal implementation}"
+    local_pr_body="Closes #${NUMBER}
+
+Implemented by claude-pal based on the approved plan in issue #${NUMBER}."
+
+    pr_create_output=$(gh pr create \
+        --repo "$REPO" \
+        --title "$local_pr_title" \
+        --body "$local_pr_body" \
+        --base main \
+        --head "$BRANCH_NAME" 2>&1) || {
+            STATUS_FAILURE_REASON="pr_create_failed: ${pr_create_output}"
+            exit 1
+        }
+    STATUS_PR_URL="\"$(echo "$pr_create_output" | tail -1)\""
+    STATUS_PR_NUMBER=$(echo "$STATUS_PR_URL" | grep -Eo '/pull/[0-9]+' | grep -Eo '[0-9]+')
+    log "created PR at $STATUS_PR_URL"
+fi
+
 STATUS_OUTCOME="success"
 STATUS_PHASE="complete"
