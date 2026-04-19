@@ -7,10 +7,6 @@ setup() {
     IMAGE_TAG="claude-pal:test-pipeline-$RANDOM"
     STATUS_DIR="$(mktemp -d)"
     chmod 0777 "$STATUS_DIR"   # container runs as non-root agent user with different UID
-    TEST_REPO="${PAL_TEST_REPO:?set PAL_TEST_REPO to owner/repo}"
-    TEST_ISSUE="${PAL_TEST_ISSUE:?set PAL_TEST_ISSUE to the test issue number}"
-    : "${CLAUDE_CODE_OAUTH_TOKEN:?required}"
-    : "${GH_TOKEN:?required}"
 }
 
 teardown() {
@@ -18,7 +14,15 @@ teardown() {
     [ -n "${STATUS_DIR:-}" ] && rm -rf "$STATUS_DIR"
 }
 
+# bats test_tags=integration
 @test "full implement pipeline round-trips on smoketest issue" {
+    [ -n "${PAL_TEST_REPO:-}" ]            || skip "set PAL_TEST_REPO=owner/repo"
+    [ -n "${PAL_TEST_ISSUE:-}" ]           || skip "set PAL_TEST_ISSUE to the test issue number"
+    [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]  || skip "set CLAUDE_CODE_OAUTH_TOKEN"
+    [ -n "${GH_TOKEN:-}" ]                 || skip "set GH_TOKEN"
+    TEST_REPO="$PAL_TEST_REPO"
+    TEST_ISSUE="$PAL_TEST_ISSUE"
+
     "$REPO_ROOT/scripts/build-image.sh" "$IMAGE_TAG" > /dev/null 2>&1
 
     # Outer `timeout` bounds the whole run; `--cap-add=NET_ADMIN` needed for iptables.
