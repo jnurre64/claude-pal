@@ -42,15 +42,18 @@ docker images claude-pal
 
 ### 3. Generate credentials
 
+> **Keep your tokens out of chat.** Run `claude setup-token` in a regular terminal — **not inside a Claude Code session**, and never paste the resulting token into a Claude Code conversation, chat app, bug report, or screenshot. Edit `~/.bashrc` (or your shell's profile) directly with an editor so the token only ever lives in your shell env. claude-pal reads that env var at dispatch time; it never needs to see the token as text in a conversation.
+
 **Claude authentication** — pick exactly ONE of these:
 
 - **Subscription OAuth** (common for personal use):
   ```bash
   claude setup-token
-  # opens a browser, prints a token that begins sk-ant-oat01-
-  # valid ~1 year
   ```
-- **Console API key** (for commercial / multi-user / pay-as-you-go scenarios): create one at https://console.anthropic.com/settings/keys — begins `sk-ant-api03-`.
+  Run this in a terminal. It opens a URL that you authorize in a browser, then prints a token beginning `sk-ant-oat01-` (valid ~1 year).
+  - **Local machine with a browser** (your desktop / laptop GUI): `setup-token` launches your default browser automatically — authorize and the token prints in the same terminal.
+  - **SSH / remote shell (no local browser)**: `setup-token` prints the URL to stdout. Copy that URL into the browser on *your* machine (the one with a GUI), authorize there, and the token still prints back in the SSH terminal. Close the terminal when done — do not relay the token elsewhere.
+- **Console API key** (for commercial / multi-user / pay-as-you-go scenarios): create one at https://console.anthropic.com/settings/keys — begins `sk-ant-api03-`. No OAuth flow; copy the key once at creation time.
 
 **GitHub token:** create a fine-grained PAT at https://github.com/settings/personal-access-tokens. Grant repository access for each repo you plan to dispatch against, with these scopes:
 
@@ -63,16 +66,17 @@ docker images claude-pal
 
 claude-pal reads credentials from the process environment at dispatch time — there is no `config.env` file managed by the plugin. This matches Anthropic's documented [`claude-code-action`](https://github.com/anthropics/claude-code-action) pattern.
 
-**Linux / macOS (bash):**
-```bash
-cat >> ~/.bashrc <<'EOF'
+> **Edit your shell profile directly — don't paste tokens into any chat.** Open `~/.bashrc` (or `~/.zshrc`) in an editor like `nano` or `vim`, or append via a shell `>>` redirect in the same terminal where `claude setup-token` just printed the token. The token value should go from the terminal → your profile file and nowhere else.
 
+**Linux / macOS (bash):** open `~/.bashrc` in an editor and append these two lines, replacing the placeholders with your real token / PAT:
+
+```bash
 # claude-pal
-export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...paste-token-here...
-export GH_TOKEN=github_pat_...paste-PAT-here...
-EOF
-source ~/.bashrc
+export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...your-token...
+export GH_TOKEN=github_pat_...your-PAT...
 ```
+
+Save, then `source ~/.bashrc` in any shell that needs the new values. (Already-running shells won't pick up the change until you source the file or open a new shell — including any already-running Claude Code session.)
 
 Same for `~/.zshrc` (zsh). Use `set -x CLAUDE_CODE_OAUTH_TOKEN ...` syntax for fish in `~/.config/fish/config.fish`.
 

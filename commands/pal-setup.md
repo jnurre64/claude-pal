@@ -44,19 +44,25 @@ Ask the user these questions, one at a time, and tailor the instructions:
 
 ## Apply the exports
 
+**Important: keep the token out of this conversation.** Run `claude setup-token` in a regular terminal (NOT the Claude Code session where this command is firing), and edit `~/.bashrc` directly. Never paste the OAuth token, API key, or PAT back into the Claude Code prompt, a chat, a screenshot, or a bug report. claude-pal reads them from your shell env — they never need to be text in a conversation.
+
 For the OAuth path:
 
 ```bash
-# Generate the token (opens a browser)
+# In a regular terminal (separate from the Claude Code session):
 claude setup-token
+# Local machine with a browser: default browser opens automatically.
+# SSH / headless: setup-token prints a URL — open it in the browser on your
+# local machine, authorize, and the token still prints back in the SSH terminal.
 
-# Copy the printed token, then:
-echo 'export CLAUDE_CODE_OAUTH_TOKEN=<paste-token-here>' >> ~/.bashrc   # or ~/.zshrc
-echo 'export GH_TOKEN=<github-pat-here>'                  >> ~/.bashrc
+# In that same terminal (or in an editor like `nano ~/.bashrc`), add these lines:
+#   export CLAUDE_CODE_OAUTH_TOKEN=<the-token-that-just-printed>
+#   export GH_TOKEN=<your-github-PAT>
+# then:
 source ~/.bashrc
 ```
 
-For the API key path, substitute `CLAUDE_CODE_OAUTH_TOKEN` with `ANTHROPIC_API_KEY` and the token with the Console API key.
+For the API key path, substitute `CLAUDE_CODE_OAUTH_TOKEN` with `ANTHROPIC_API_KEY` and the token with the Console API key (created at https://console.anthropic.com/settings/keys — no OAuth flow needed).
 
 ## Verify
 
