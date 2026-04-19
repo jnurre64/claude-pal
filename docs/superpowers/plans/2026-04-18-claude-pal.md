@@ -3596,16 +3596,56 @@ git add docs/install.md
 git commit -m "docs: install guide for v0.4 (env-passthrough, sync-only)"
 ```
 
-- [ ] **Step 3: Live validation** (the point of running Phase 8 now)
+- [ ] **Step 3: Credential prep for the live test**
 
-Open a fresh terminal and follow `docs/install.md` end-to-end against `Frightful-Games/recipe-manager-demo` using the pennyworth-bot PAT. The acceptance criteria:
+Per user memory (`reference_github_finegrained_pat_collaborator.md`), the pennyworth-bot PAT is already exported in `~/.bashrc` — but under the name `GITHUB_TOKEN`, not `GH_TOKEN`. That var is load-bearing for the user's MCP github server, interactive `gh` for Frightful-Games repos, and the bot systemd service; do NOT rename or remove it. Add an alias line so claude-pal sees what it expects while everything else keeps working:
 
-1. Steps 1–6 produce no ambiguity or missing info.
-2. `/claude-pal:pal-plan` publishes a plan file as a GitHub issue comment.
-3. `/claude-pal:pal-implement <#>` runs the container, goes through the gated pipeline, and opens a PR on `Frightful-Games/recipe-manager-demo`.
-4. Any rough edges get fixed in `docs/install.md` and re-validated.
+```bash
+# Confirm with the user before editing their ~/.bashrc
+echo '' >> ~/.bashrc
+echo '# claude-pal reads GH_TOKEN; alias to the pennyworth-bot PAT that is already exported as GITHUB_TOKEN' >> ~/.bashrc
+echo 'export GH_TOKEN="$GITHUB_TOKEN"' >> ~/.bashrc
+source ~/.bashrc
+```
 
-Do NOT mark Task 8.1 complete until the live round-trip succeeds.
+`CLAUDE_CODE_OAUTH_TOKEN` is typically not in `~/.bashrc` yet. Ask the user whether to generate a fresh one with `claude setup-token` or use an existing token, then add it:
+
+```bash
+# Ask first: "Do you want to run claude setup-token now, or paste an existing token?"
+# After they hand you a value:
+echo 'export CLAUDE_CODE_OAUTH_TOKEN=<token>' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Verify (prints variable names only, values remain redacted):
+
+```bash
+env | grep -E '^(CLAUDE_CODE_OAUTH_TOKEN|GH_TOKEN|GITHUB_TOKEN)=' | cut -d= -f1
+# expected output, order may vary:
+#   CLAUDE_CODE_OAUTH_TOKEN
+#   GH_TOKEN
+#   GITHUB_TOKEN
+```
+
+Also verify the PAT's repository access list includes `Frightful-Games/recipe-manager-demo`. If it was minted before that repo existed, it may need editing at https://github.com/settings/personal-access-tokens (→ Edit → Repository access):
+
+```bash
+GH_TOKEN="$GITHUB_TOKEN" gh issue list --repo Frightful-Games/recipe-manager-demo
+# should list issues, not return 404
+```
+
+If that call 404s, stop and tell the user to add the repo to the PAT's access list before proceeding — do not attempt any guessing / retries.
+
+- [ ] **Step 4: Live validation** (the point of running Phase 8 now)
+
+Open a fresh `claude --plugin-dir ~/repos/claude-pal` session (or `--plugin-dir ~/repos/claude-pal --plugin-dir <path-to-superpowers>` to include the `superpowers` plugin for `/claude-pal:pal-brainstorm`). Follow `docs/install.md` end-to-end against `Frightful-Games/recipe-manager-demo` using the credentials prepared in Step 3. Acceptance criteria:
+
+1. Install guide steps 1–6 produce no ambiguity or missing info.
+2. `/claude-pal:pal-plan` publishes a plan file as a GitHub issue comment on `Frightful-Games/recipe-manager-demo` (or creates a new issue if no issue number given).
+3. `/claude-pal:pal-implement <#>` runs the container, goes through the gated pipeline, and opens a real PR on the repo.
+4. Any rough edges get fixed in `docs/install.md` (and in the plugin's libs/commands if appropriate) and re-validated before marking Step 4 complete.
+
+Do NOT mark Task 8.1 complete until the live round-trip produces a merged-ready PR URL on `Frightful-Games/recipe-manager-demo`.
 
 ### Task 8.2: Per-repo config example
 
