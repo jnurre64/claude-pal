@@ -216,6 +216,25 @@ fi
 STATUS_COMMITS=$(git -C "$WORKTREE_DIR" log --format='%h' "${start_sha}..${end_sha}" | jq -R . | jq -sc . 2>/dev/null || echo '[]')
 log "implement: captured $(git -C "$WORKTREE_DIR" rev-list --count "${start_sha}..${end_sha}") new commits"
 
+STATUS_PHASE="post_impl_review"
+AGENT_POST_IMPL_REVIEW="${AGENT_POST_IMPL_REVIEW:-true}"
+AGENT_POST_IMPL_REVIEW_MAX_RETRIES="${AGENT_POST_IMPL_REVIEW_MAX_RETRIES:-1}"
+AGENT_MODEL_POST_IMPL_REVIEW="${AGENT_MODEL_POST_IMPL_REVIEW:-}"
+AGENT_MODEL_POST_IMPL_RETRY="${AGENT_MODEL_POST_IMPL_RETRY:-}"
+
+if ! run_post_impl_review; then
+    # review-gates.sh sets POST_IMPL_REVIEW_CONCERNS
+    STATUS_PHASE="post_impl_retry"
+    if ! handle_post_impl_review_retry "$AGENT_ALLOWED_TOOLS_IMPLEMENT"; then
+        STATUS_OUTCOME="review_concerns_unresolved"
+        STATUS_REVIEW_CONCERNS_UNRESOLVED=$(jq -Rs 'split("\n") | map(select(. != ""))' <<< "$POST_IMPL_REVIEW_CONCERNS")
+        STATUS_FAILURE_REASON="post_impl_review_unresolved"
+        exit 1
+    else
+        STATUS_REVIEW_CONCERNS_ADDRESSED=$(jq -Rs 'split("\n") | map(select(. != ""))' <<< "$REVIEW_RETRY_CONCERNS")
+    fi
+fi
+
 # Placeholder for now so the skeleton runs to completion
 STATUS_OUTCOME="success"
 STATUS_PHASE="complete"
