@@ -75,10 +75,18 @@ trap 'write_status' EXIT
 # ─── Source lib files (review-gates provides gate functions) ────
 # shellcheck source=/dev/null
 . "$LIB_DIR/review-gates.sh"
+# shellcheck source=/dev/null
+. "$LIB_DIR/firewall.sh"
 
 # ─── Main pipeline (filled in by later tasks) ───────────────────
 log "claude-pal v0.2 entrypoint"
 log "event=$EVENT_TYPE repo=$REPO number=$NUMBER"
+
+STATUS_PHASE="applying_firewall"
+apply_firewall "$PAL_HOME/allowlist.yaml" || {
+    STATUS_FAILURE_REASON="firewall_apply_failed"
+    exit 1
+}
 
 STATUS_PHASE="fetching_context"
 # (Task 2.3 adds repo clone + worktree)
