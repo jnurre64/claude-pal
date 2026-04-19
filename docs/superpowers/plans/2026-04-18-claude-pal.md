@@ -3271,17 +3271,27 @@ icacls "$env:LOCALAPPDATA\claude-pal\config.env" /inheritance:r /grant:r "${env:
 
 ### 5. Install as a Claude Code plugin
 
-`claude-pal` is a Claude Code plugin (manifest at `.claude-plugin/plugin.json`, shared libs at plugin-root `lib/`, skills under `skills/pal-*/`). Install it so Claude Code discovers the skills and sets `${CLAUDE_PLUGIN_ROOT}` correctly at invocation time.
+`claude-pal` is a Claude Code plugin (manifest at `.claude-plugin/plugin.json`, shared libs at plugin-root `lib/`, skills under `skills/pal-*/`). It must be loaded AS a plugin for `${CLAUDE_PLUGIN_ROOT}` to be populated — do **not** copy `skills/pal-*` into `~/.claude/skills/` manually; the `lib/` sourcing will fail.
 
-From a running Claude Code session, add your local checkout as a plugin source:
+**For end users (persistent install from a marketplace):**
 
 ```
-/plugin install ~/repos/claude-pal
+claude plugin install claude-pal@<marketplace-name>
 ```
 
-(Or, if installing from a published marketplace, use the marketplace's `/plugin install` flow.)
+This requires the plugin to be published to a marketplace (out of scope for v1; see "For developers" below for now).
 
-**Do not** copy skills manually into `~/.claude/skills/` — the `lib/` helpers and `${CLAUDE_PLUGIN_ROOT}` env var only wire up correctly when Claude Code treats the checkout as a plugin.
+**For developers / local-only use:**
+
+```bash
+# Validate the manifest
+claude plugin validate ~/repos/claude-pal
+
+# Load for one session at a time (no global install state, cleanest dev loop)
+claude --plugin-dir ~/repos/claude-pal
+```
+
+`--plugin-dir` is repeatable and scoped to the single `claude` session. Inside that session, `/skills` lists the `pal-*` skills and `${CLAUDE_PLUGIN_ROOT}` resolves to the checkout path. This is also the mode used during Phase 3–6 dev of this plan.
 
 ### 6. Verify
 

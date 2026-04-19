@@ -28,3 +28,23 @@ claude-pal ships as a Claude Code plugin. Shared bash helpers under plugin-root 
 - Tests use BATS-Core
 - Run checks: `shellcheck $(find . -name '*.sh') && bats tests/`
 - Use `set -euo pipefail` in all scripts
+
+## Local plugin dev loop
+
+Do NOT copy `skills/pal-*` into `~/.claude/skills/` — shared helpers at plugin-root `lib/` rely on `${CLAUDE_PLUGIN_ROOT}`, which Claude Code only sets when it loads the directory as a plugin.
+
+```bash
+# 1. Validate the manifest (fast, no session needed)
+claude plugin validate ~/repos/claude-pal
+# → "✔ Validation passed"
+
+# 2. Load for one session only (session-scoped; no global install state)
+claude --plugin-dir ~/repos/claude-pal
+# Inside: `/skills` lists pal-implement (and whatever else Phase 4+ adds).
+# When a skill fires, ${CLAUDE_PLUGIN_ROOT} points at ~/repos/claude-pal,
+# and every SKILL.md's `. "${CLAUDE_PLUGIN_ROOT}/lib/*.sh"` resolves.
+```
+
+The BATS smoke tests fake `CLAUDE_PLUGIN_ROOT=$REPO_ROOT` — useful for CI, but only the `--plugin-dir` flow above verifies that Claude Code itself populates the env var.
+
+Publishing to the `claude-plugins-official` marketplace is out of scope for v1; treat this as a local/personal plugin.
