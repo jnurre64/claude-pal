@@ -1,57 +1,32 @@
-# skills/lib/config.sh
+# lib/config.sh
 # shellcheck shell=bash
-# Resolve and load the claude-pal host config.
-# Returns config values via stdout or sets variables depending on caller.
-
-pal_config_path() {
-    local host_os
-    host_os=$(uname -s)
-    case "$host_os" in
-        Linux|Darwin)
-            echo "${XDG_CONFIG_HOME:-$HOME/.config}/claude-pal/config.env"
-            ;;
-        MINGW*|MSYS*|CYGWIN*)
-            # Git Bash on Windows
-            local local_app
-            local_app=$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")
-            echo "$local_app/claude-pal/config.env"
-            ;;
-        *)
-            echo "${XDG_CONFIG_HOME:-$HOME/.config}/claude-pal/config.env"
-            ;;
-    esac
-}
+# Verify required credentials are present in the process environment.
+#
+# claude-pal uses env-passthrough exclusively — this matches Anthropic's own
+# anthropics/claude-code-action pattern, which is the only documented
+# non-interactive auth mechanism for `claude` CLI. No on-disk secret file is
+# maintained by the plugin: users export CLAUDE_CODE_OAUTH_TOKEN (or
+# ANTHROPIC_API_KEY) and GH_TOKEN in their shell profile (once), and
+# claude-pal forwards them to the container at `docker run -e ...` time.
 
 pal_load_config() {
-    local path
-    path=$(pal_config_path)
-    if [ ! -f "$path" ]; then
-        echo "pal: config file not found at $path" >&2
-        echo "pal: run 'pal-setup' or create the file manually — see docs/install.md" >&2
+    local missing=()
+    if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+        missing+=("CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY)")
+    fi
+    if [ -z "${GH_TOKEN:-}" ]; then
+        missing+=("GH_TOKEN")
+    fi
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo "pal: missing required environment variable(s): ${missing[*]}" >&2
+        echo "pal:" >&2
+        echo "pal: one-time setup (bash/zsh):" >&2
+        echo "pal:   claude setup-token              # prints an OAuth token valid ~1yr" >&2
+        echo "pal:   echo 'export CLAUDE_CODE_OAUTH_TOKEN=<token>' >> ~/.bashrc" >&2
+        echo "pal:   echo 'export GH_TOKEN=github_pat_<token>' >> ~/.bashrc" >&2
+        echo "pal:   source ~/.bashrc                # or start a new shell" >&2
+        echo "pal:" >&2
+        echo "pal: or: /claude-pal:pal-setup for a guided walkthrough" >&2
         return 1
     fi
-    # shellcheck source=/dev/null
-    . "$path"
-}
-
-pal_config_permissions_ok() {
-    local path
-    path=$(pal_config_path)
-    local host_os
-    host_os=$(uname -s)
-    case "$host_os" in
-        Linux|Darwin)
-            local perms
-            perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%A' "$path" 2>/dev/null)
-            if [ "$perms" != "600" ]; then
-                echo "pal: config file $path has permissions $perms, expected 600" >&2
-                echo "pal: run 'chmod 600 \"$path\"' and retry" >&2
-                return 1
-            fi
-            ;;
-        MINGW*|MSYS*|CYGWIN*)
-            # Windows: check NTFS ACL via icacls; simplified presence check for v1
-            # Full ACL validation is in Task 7.4
-            ;;
-    esac
 }

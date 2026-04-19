@@ -9,12 +9,10 @@ setup() {
     export XDG_CONFIG_HOME="$TMPHOME/.config"
     export XDG_DATA_HOME="$TMPHOME/.local/share"
 
-    mkdir -p "$XDG_CONFIG_HOME/claude-pal"
-    cat > "$XDG_CONFIG_HOME/claude-pal/config.env" <<'CONFIG'
-CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fake
-GH_TOKEN=github_pat_fake
-CONFIG
-    chmod 600 "$XDG_CONFIG_HOME/claude-pal/config.env"
+    # env-passthrough: credentials are process env vars, not a file on disk
+    export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fake
+    export GH_TOKEN=github_pat_fake
+    unset ANTHROPIC_API_KEY
 
     # Mock docker with a script that writes a fake status.json
     export PATH="$TMPHOME/bin:$PATH"

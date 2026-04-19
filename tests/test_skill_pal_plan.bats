@@ -7,13 +7,10 @@ setup() {
     TMPHOME="$(mktemp -d)"
     export HOME="$TMPHOME"
     export XDG_CONFIG_HOME="$TMPHOME/.config"
-    export GH_TOKEN="fake"
-    mkdir -p "$XDG_CONFIG_HOME/claude-pal"
-    cat > "$XDG_CONFIG_HOME/claude-pal/config.env" <<CONFIG
-CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fake
-GH_TOKEN=github_pat_fake
-CONFIG
-    chmod 600 "$XDG_CONFIG_HOME/claude-pal/config.env"
+    # env-passthrough: credentials are process env vars, not a file on disk
+    export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fake
+    export GH_TOKEN=github_pat_fake
+    unset ANTHROPIC_API_KEY
 
     # Fake project with a plan file
     WORKDIR="$(mktemp -d)"

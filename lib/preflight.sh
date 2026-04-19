@@ -1,28 +1,16 @@
-# skills/lib/preflight.sh
+# lib/preflight.sh
 # shellcheck shell=bash
 # Preflight checks run before every dispatch.
-
-pal_preflight_no_api_key_in_env() {
-    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-        echo "pal: ERROR — ANTHROPIC_API_KEY is set in your environment." >&2
-        echo "pal: This would silently override your CLAUDE_CODE_OAUTH_TOKEN and bill a Console account." >&2
-        echo "pal: Unset it with: unset ANTHROPIC_API_KEY" >&2
-        return 1
-    fi
-}
 
 pal_preflight_single_auth_method() {
     local has_oauth=0 has_api=0
     [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && has_oauth=1
     [ -n "${ANTHROPIC_API_KEY:-}" ] && has_api=1
     local count=$((has_oauth + has_api))
-    if [ "$count" -eq 0 ]; then
-        echo "pal: ERROR — neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set in config.env" >&2
-        return 1
-    fi
     if [ "$count" -gt 1 ]; then
-        echo "pal: ERROR — both CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY are in config.env" >&2
-        echo "pal: Set exactly one. See docs/authentication.md." >&2
+        echo "pal: ERROR — both CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY are set" >&2
+        echo "pal: ANTHROPIC_API_KEY would silently override CLAUDE_CODE_OAUTH_TOKEN and bill a Console account." >&2
+        echo "pal: Unset whichever you don't want: unset CLAUDE_CODE_OAUTH_TOKEN   (or)   unset ANTHROPIC_API_KEY" >&2
         return 1
     fi
 }
@@ -53,10 +41,6 @@ pal_preflight_windows_bash() {
 }
 
 pal_preflight_gh_auth() {
-    if [ -z "${GH_TOKEN:-}" ]; then
-        echo "pal: ERROR — GH_TOKEN not set in config.env" >&2
-        return 1
-    fi
     if ! GH_TOKEN="$GH_TOKEN" gh auth status > /dev/null 2>&1; then
         echo "pal: WARN — gh auth status failed with configured token" >&2
         # Non-fatal: some PATs return 200 but fail auth status; let the container try
@@ -81,9 +65,7 @@ pal_preflight_all() {
     local repo="${1:-}"
     local number="${2:-}"
 
-    pal_preflight_no_api_key_in_env &&
     pal_load_config &&
-    pal_config_permissions_ok &&
     pal_preflight_single_auth_method &&
     pal_preflight_docker_reachable &&
     pal_preflight_windows_bash &&
