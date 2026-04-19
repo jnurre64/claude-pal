@@ -2579,7 +2579,7 @@ git commit -m "feat(plugin): pal-setup walkthrough + auth docs + defer Phase 7"
 
 ## Phase 5: Async mode, run registry management, and support skills — **COMPLETE**
 
-**Sequencing note (2026-04-19, updated):** Phases 8 and 5 complete. All 5 BATS tests pass. Current HEAD: `dd8820f`. Phase 6 is next.
+**Sequencing note (2026-04-19, updated):** Phases 5, 6, and 8 complete. All 5 BATS tests pass. Current HEAD: `b10088f`.
 
 ---
 
@@ -3052,69 +3052,9 @@ git commit -m "feat(plugin): pal-cancel for killing in-flight runs"
 
 ---
 
-## Phase 6: `/pal-revise` skill
+## Phase 6: `/pal-revise` skill — **COMPLETE**
 
-**Sequencing note (2026-04-19):** Phases 8 and 5 are complete. Phase 6 is **NEXT TO EXECUTE**.
----
-
-### Phase 6 resume context (2026-04-19) — delete this block once Phase 6 is fully complete
-
-#### Foundation delivered by Phase 5 (all on `main`)
-
-| Commit | What it adds |
-|---|---|
-| `85cc013` | `lib/notify.sh` — cross-platform desktop notifier (Linux/macOS/Windows) |
-| `d23eb91` | `lib/launcher.sh`: `pal_launch_async` with forked watcher + notification |
-| `c3fc157` | `skills/pal-implement/SKILL.md`: `--async` flag wired up |
-| `3f3c30d` | `lib/status-list.sh` + `skills/pal-status/SKILL.md` + `skills/pal-logs/SKILL.md` |
-| `19f68bd` | `lib/launcher.sh`: `pal_cancel_run` + `skills/pal-cancel/SKILL.md` |
-| `dd8820f` | `tests/test_async_and_cancel.bats` — 2 new BATS tests |
-
-Current HEAD: `dd8820f`.
-
-#### Codebase state entering Phase 6
-
-**Host-side libs (`~/repos/claude-pal/lib/`):**
-- `config.sh`, `preflight.sh`, `runs.sh`, `plan-locator.sh`, `publisher.sh` — unchanged from Phases 3–4
-- `launcher.sh` — `pal_launch_sync`, `pal_launch_async`, `pal_cancel_run`, `pal_render_status_summary`
-- `notify.sh` — `pal_notify` (cross-platform)
-- `status-list.sh` — `pal_list_runs`, `pal_show_run`, `pal_clean_runs`
-
-**Skills (`~/repos/claude-pal/skills/`):**
-- `pal-plan/SKILL.md`, `pal-implement/SKILL.md` (with `--async`)
-- `pal-status/SKILL.md`, `pal-logs/SKILL.md`, `pal-cancel/SKILL.md`
-
-**Tests (`~/repos/claude-pal/tests/`):**
-- `test_skill_pal_implement.bats` (1), `test_skill_pal_plan.bats` (2), `test_async_and_cancel.bats` (2)
-- All 5 pass.
-
-**Not yet built (Phase 6 deliverables):**
-- `skills/pal-revise/SKILL.md` — Task 6.1
-- `tests/test_revise_smoke.bats` — Task 6.2 (live integration test; skips if env vars absent)
-
-#### Gotchas and ops notes
-
-1. **Task 6.2 is a live integration test** — requires `PAL_TEST_REPO` and `PAL_TEST_PR_WITH_REVIEW` (a PR# with CHANGES_REQUESTED review). The `: "${PAL_TEST_REPO:?...}"` guard causes the test to skip cleanly if not set. Task 6.1 (the SKILL.md) is the primary deliverable.
-2. **No new host-side libs needed** — `pal_launch_sync` and `pal_launch_async` already accept any `event_type`. The `/pal-revise` skill sources the same libs as `/pal-implement` and passes `revise` as event type.
-3. **Container revise path** — `image/opt/pal/entrypoint.sh` already has a `revise` branch (Phase 2). Before running the smoke test live, verify `image/opt/pal/lib/fetch-context.sh` handles `event_type=revise` (fetches PR review comments, not just issue body).
-
-#### How to start this session
-
-```bash
-cd ~/repos/claude-pal
-```
-
-Verify baseline before starting:
-```bash
-tests/bats/bin/bats tests/test_skill_pal_implement.bats tests/test_skill_pal_plan.bats tests/test_async_and_cancel.bats
-# Expect: 5/5 pass
-shellcheck lib/*.sh
-# Expect: clean
-git log --oneline -3
-# Expect: HEAD = dd8820f
-```
-
-Then ask Claude Code to execute Phase 6 using `superpowers:executing-plans` with this plan file.
+**Sequencing note (2026-04-19):** Phase 6 complete. All phases complete except Phase 7 (deferred) and Phase 8 (already done). Current HEAD: `b10088f`.
 
 ---
 
