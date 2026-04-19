@@ -2577,85 +2577,9 @@ git commit -m "feat(plugin): pal-setup walkthrough + auth docs + defer Phase 7"
 
 ---
 
-## Phase 5: Async mode, run registry management, and support skills — **NEXT TO EXECUTE**
+## Phase 5: Async mode, run registry management, and support skills — **COMPLETE**
 
-**Sequencing note (2026-04-19, updated):** Phase 8 is complete. Live end-to-end validation passed (PR #27 on `Frightful-Games/recipe-manager-demo`). v0.4.0 tagged. Run Phase 5 next, then Phase 6.
-
----
-
-### Phase 5 resume context (2026-04-19) — delete this block once Phase 5 is fully complete
-
-#### Foundation delivered by Phase 8 (all on `main`, tagged `v0.4.0`)
-
-| Commit | What it adds |
-|---|---|
-| `edf926a` | `docs/install.md` — install guide |
-| `74e416f` | `.pal/config.env.example` — per-repo non-secret config example |
-| `dff8386` | `scripts/diff-upstream.sh` — vendored-file drift checker |
-| `3cd8a39` | README: "What it does" + "Getting started" sections |
-| `7a40c52` | `docs/install.md` + `commands/pal-setup.md`: SSH path + token-hygiene callouts |
-| `ff4db07` | **Two live-validation bug fixes:** (1) `lib/launcher.sh` pre-creates log file as 0666 so container can write; (2) `image/opt/pal/lib/fetch-context.sh` falls back to issue body when no `<!-- agent-plan -->` comment exists |
-| `baa9917` | CHANGELOG.md + `plugin.json` version → 0.4.0 |
-
-Current HEAD: `629a010` (docs: plan cleanup).
-
-#### Codebase state entering Phase 5
-
-**Host-side libs already built (`~/repos/claude-pal/lib/`):**
-- `config.sh` — `pal_load_config`, PAL_IMAGE_TAG, PAL_RUNS_DIR, per-repo `.pal/config.env`
-- `preflight.sh` — single-auth, docker reachable, windows-bash, gh auth, no-double-dispatch lock
-- `runs.sh` — `pal_runs_dir`, `pal_run_dir`, `pal_new_run_id`, `pal_write_launch_meta`, `pal_acquire_lock`, `pal_release_lock`
-- `launcher.sh` — `pal_launch_sync` (sync docker run, log tee), `pal_render_status_summary`
-- `plan-locator.sh` — `pal_find_plan_file`
-- `publisher.sh` — `pal_publish_plan` (create issue or post comment with `<!-- agent-plan -->` marker)
-
-**Skills already built (`~/repos/claude-pal/skills/`):**
-- `pal-plan/SKILL.md` — publishes plan to GitHub issue
-- `pal-implement/SKILL.md` — runs sync container pipeline (no --async yet)
-
-**Commands already built (`~/repos/claude-pal/commands/`):**
-- `pal-brainstorm.md`, `pal-setup.md`
-
-**Tests (`~/repos/claude-pal/tests/`):**
-- `test_skill_pal_implement.bats` — 1 test (mocked docker happy path)
-- `test_skill_pal_plan.bats` — 2 tests (post comment, create issue)
-- All 3 pass: `tests/bats/bin/bats tests/test_skill_pal_implement.bats tests/test_skill_pal_plan.bats`
-
-**Image:** `claude-pal:latest` on local Docker daemon. Entrypoint is `image/opt/pal/entrypoint.sh`. Container libs at `image/opt/pal/lib/`.
-
-**Not yet built (Phase 5 deliverables):**
-- `lib/notify.sh` — cross-platform desktop notifier
-- `pal_launch_async` in `lib/launcher.sh` — detached container + forked watcher
-- `--async` support in `skills/pal-implement/SKILL.md`
-- `lib/status-list.sh` + `skills/pal-status/SKILL.md`
-- `skills/pal-logs/SKILL.md`
-- `pal_cancel_run` in `lib/launcher.sh` + `skills/pal-cancel/SKILL.md`
-
-#### Gotchas and ops notes
-
-1. **`pal_launch_async` watcher sources libs via `$(dirname "${BASH_SOURCE[0]}")`** — that path resolves at the time the subshell fires, which is fine since the libs are on disk. Double-check the source path in the watcher subshell matches the actual layout.
-2. **Log file pre-creation** — `pal_launch_sync` pre-creates `$run_dir/log` as 0666 before calling docker (fix from Phase 8). `pal_launch_async` does NOT use `tee` on the host side (Docker logs are harvested by the watcher after the container exits), so it does NOT need this pre-creation step.
-3. **`pal_cancel_run` status.json** — the cancel function writes a minimal status.json. Make sure the `started_at` and `completed_at` fields match the real schema used by the container entrypoint or `pal_render_status_summary` may print unknown outcome.
-4. **Test coverage** — add at least one BATS test for the async path (mock docker detach + watcher) and one for `pal_cancel_run`. Keep tests in `tests/` alongside existing `.bats` files.
-
-#### How to start this session
-
-```bash
-cd ~/repos/claude-pal
-claude  # or claude --plugin-dir ~/repos/claude-pal if testing skills interactively
-```
-
-Verify baseline before starting:
-```bash
-tests/bats/bin/bats tests/test_skill_pal_implement.bats tests/test_skill_pal_plan.bats
-# Expect: 3/3 pass
-shellcheck lib/*.sh
-# Expect: clean
-git log --oneline -3
-# Expect: HEAD = 629a010
-```
-
-Then ask Claude Code to execute Phase 5 using `superpowers:executing-plans` with this plan file.
+**Sequencing note (2026-04-19, updated):** Phases 8 and 5 complete. All 5 BATS tests pass. Current HEAD: `dd8820f`. Phase 6 is next.
 
 ---
 
@@ -2664,7 +2588,7 @@ Then ask Claude Code to execute Phase 5 using `superpowers:executing-plans` with
 **Files:**
 - Create: `~/repos/claude-pal/lib/notify.sh`
 
-- [ ] **Step 1: Write notify.sh**
+- [x] **Step 1: Write notify.sh**
 
 ```bash
 cat > ~/repos/claude-pal/lib/notify.sh <<'EOF'
@@ -2713,7 +2637,7 @@ pal_notify() {
 EOF
 ```
 
-- [ ] **Step 2: shellcheck and commit**
+- [x] **Step 2: shellcheck and commit**
 
 ```bash
 shellcheck ~/repos/claude-pal/lib/notify.sh
@@ -2727,7 +2651,7 @@ git commit -m "feat(skills): cross-platform desktop notifier (Linux/macOS/Window
 **Files:**
 - Modify: `~/repos/claude-pal/lib/launcher.sh`
 
-- [ ] **Step 1: Add async launch function to launcher.sh**
+- [x] **Step 1: Add async launch function to launcher.sh**
 
 Append to `lib/launcher.sh`:
 
@@ -2804,7 +2728,7 @@ pal_launch_async() {
 }
 ```
 
-- [ ] **Step 2: shellcheck and commit**
+- [x] **Step 2: shellcheck and commit**
 
 ```bash
 shellcheck ~/repos/claude-pal/lib/launcher.sh
@@ -2818,7 +2742,7 @@ git commit -m "feat(skills): async launcher with forked watcher and notification
 **Files:**
 - Modify: `~/repos/claude-pal/skills/pal-implement/SKILL.md`
 
-- [ ] **Step 1: Update SKILL.md to handle --async**
+- [x] **Step 1: Update SKILL.md to handle --async**
 
 Update the "Steps" section to:
 
@@ -2831,7 +2755,7 @@ Update the "Steps" section to:
    - `pal_render_status_summary "$run_id"`
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 cd ~/repos/claude-pal
@@ -2845,7 +2769,7 @@ git commit -m "feat(skills): pal-implement now supports --async"
 - Create: `~/repos/claude-pal/skills/pal-status/SKILL.md`
 - Create: `~/repos/claude-pal/lib/status-list.sh`
 
-- [ ] **Step 1: Write status-list.sh**
+- [x] **Step 1: Write status-list.sh**
 
 ```bash
 mkdir -p ~/repos/claude-pal/skills/pal-status
@@ -2940,7 +2864,7 @@ pal_clean_runs() {
 EOF
 ```
 
-- [ ] **Step 2: Write `/pal-status` SKILL.md**
+- [x] **Step 2: Write `/pal-status` SKILL.md**
 
 ```bash
 cat > ~/repos/claude-pal/skills/pal-status/SKILL.md <<'EOF'
@@ -2971,7 +2895,7 @@ description: List claude-pal runs or show details on a specific one. Reconciles 
 EOF
 ```
 
-- [ ] **Step 3: shellcheck and commit**
+- [x] **Step 3: shellcheck and commit**
 
 ```bash
 shellcheck ~/repos/claude-pal/lib/status-list.sh
@@ -2985,7 +2909,7 @@ git commit -m "feat(plugin): pal-status for listing/detailing/cleaning runs"
 **Files:**
 - Create: `~/repos/claude-pal/skills/pal-logs/SKILL.md`
 
-- [ ] **Step 1: Write SKILL.md**
+- [x] **Step 1: Write SKILL.md**
 
 ```bash
 mkdir -p ~/repos/claude-pal/skills/pal-logs
@@ -3017,7 +2941,7 @@ description: Tail logs for a claude-pal run. Supports --follow to stream live ou
 EOF
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 cd ~/repos/claude-pal
@@ -3031,7 +2955,7 @@ git commit -m "feat(plugin): pal-logs skill"
 - Create: `~/repos/claude-pal/skills/pal-cancel/SKILL.md`
 - Modify: `~/repos/claude-pal/lib/launcher.sh`
 
-- [ ] **Step 1: Add pal_cancel to launcher.sh**
+- [x] **Step 1: Add pal_cancel to launcher.sh**
 
 Append to `lib/launcher.sh`:
 
@@ -3085,7 +3009,7 @@ EOF_CANCEL
 }
 ```
 
-- [ ] **Step 2: Write SKILL.md**
+- [x] **Step 2: Write SKILL.md**
 
 ```bash
 mkdir -p ~/repos/claude-pal/skills/pal-cancel
@@ -3115,7 +3039,7 @@ description: Cancel an in-flight claude-pal run. Sends SIGTERM (10s grace) then 
 EOF
 ```
 
-- [ ] **Step 3: shellcheck and commit**
+- [x] **Step 3: shellcheck and commit**
 
 ```bash
 shellcheck ~/repos/claude-pal/lib/launcher.sh
@@ -3130,7 +3054,69 @@ git commit -m "feat(plugin): pal-cancel for killing in-flight runs"
 
 ## Phase 6: `/pal-revise` skill
 
-**Sequencing note:** Phase 8 and Phase 5 must both be complete before starting Phase 6. Phase 6 assumes Phase 5's async infrastructure (`notify.sh`, `pal_launch_async`, `pal_cancel_run`) exists and the container pipeline has been exercised end-to-end.
+**Sequencing note (2026-04-19):** Phases 8 and 5 are complete. Phase 6 is **NEXT TO EXECUTE**.
+---
+
+### Phase 6 resume context (2026-04-19) — delete this block once Phase 6 is fully complete
+
+#### Foundation delivered by Phase 5 (all on `main`)
+
+| Commit | What it adds |
+|---|---|
+| `85cc013` | `lib/notify.sh` — cross-platform desktop notifier (Linux/macOS/Windows) |
+| `d23eb91` | `lib/launcher.sh`: `pal_launch_async` with forked watcher + notification |
+| `c3fc157` | `skills/pal-implement/SKILL.md`: `--async` flag wired up |
+| `3f3c30d` | `lib/status-list.sh` + `skills/pal-status/SKILL.md` + `skills/pal-logs/SKILL.md` |
+| `19f68bd` | `lib/launcher.sh`: `pal_cancel_run` + `skills/pal-cancel/SKILL.md` |
+| `dd8820f` | `tests/test_async_and_cancel.bats` — 2 new BATS tests |
+
+Current HEAD: `dd8820f`.
+
+#### Codebase state entering Phase 6
+
+**Host-side libs (`~/repos/claude-pal/lib/`):**
+- `config.sh`, `preflight.sh`, `runs.sh`, `plan-locator.sh`, `publisher.sh` — unchanged from Phases 3–4
+- `launcher.sh` — `pal_launch_sync`, `pal_launch_async`, `pal_cancel_run`, `pal_render_status_summary`
+- `notify.sh` — `pal_notify` (cross-platform)
+- `status-list.sh` — `pal_list_runs`, `pal_show_run`, `pal_clean_runs`
+
+**Skills (`~/repos/claude-pal/skills/`):**
+- `pal-plan/SKILL.md`, `pal-implement/SKILL.md` (with `--async`)
+- `pal-status/SKILL.md`, `pal-logs/SKILL.md`, `pal-cancel/SKILL.md`
+
+**Tests (`~/repos/claude-pal/tests/`):**
+- `test_skill_pal_implement.bats` (1), `test_skill_pal_plan.bats` (2), `test_async_and_cancel.bats` (2)
+- All 5 pass.
+
+**Not yet built (Phase 6 deliverables):**
+- `skills/pal-revise/SKILL.md` — Task 6.1
+- `tests/test_revise_smoke.bats` — Task 6.2 (live integration test; skips if env vars absent)
+
+#### Gotchas and ops notes
+
+1. **Task 6.2 is a live integration test** — requires `PAL_TEST_REPO` and `PAL_TEST_PR_WITH_REVIEW` (a PR# with CHANGES_REQUESTED review). The `: "${PAL_TEST_REPO:?...}"` guard causes the test to skip cleanly if not set. Task 6.1 (the SKILL.md) is the primary deliverable.
+2. **No new host-side libs needed** — `pal_launch_sync` and `pal_launch_async` already accept any `event_type`. The `/pal-revise` skill sources the same libs as `/pal-implement` and passes `revise` as event type.
+3. **Container revise path** — `image/opt/pal/entrypoint.sh` already has a `revise` branch (Phase 2). Before running the smoke test live, verify `image/opt/pal/lib/fetch-context.sh` handles `event_type=revise` (fetches PR review comments, not just issue body).
+
+#### How to start this session
+
+```bash
+cd ~/repos/claude-pal
+```
+
+Verify baseline before starting:
+```bash
+tests/bats/bin/bats tests/test_skill_pal_implement.bats tests/test_skill_pal_plan.bats tests/test_async_and_cancel.bats
+# Expect: 5/5 pass
+shellcheck lib/*.sh
+# Expect: clean
+git log --oneline -3
+# Expect: HEAD = dd8820f
+```
+
+Then ask Claude Code to execute Phase 6 using `superpowers:executing-plans` with this plan file.
+
+---
 
 ### Task 6.1: `/pal-revise` skill markdown
 
