@@ -1,6 +1,7 @@
 # Secrets
 config.env
 .pal/config.env
+.envrc
 
 # Build artifacts
 *.log
