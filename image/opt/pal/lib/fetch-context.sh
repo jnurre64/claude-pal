@@ -17,8 +17,17 @@ fetch_issue_context() {
     AGENT_ISSUE_BODY=$(jq -r .body <<< "$issue_json")
     AGENT_COMMENTS=$(jq -r '.comments[] | "## " + .author.login + " at " + .createdAt + "\n" + .body' <<< "$issue_json")
 
-    # Find the latest <!-- agent-plan --> comment
+    # Find the latest <!-- agent-plan --> marker — check comments first, then body
     AGENT_PLAN_CONTENT=$(jq -r '[.comments[] | select(.body | startswith("<!-- agent-plan -->"))] | last | .body // ""' <<< "$issue_json" | sed 's|^<!-- agent-plan -->||')
+
+    if [ -z "$AGENT_PLAN_CONTENT" ]; then
+        # Fallback: publisher puts the marker in the issue body when creating a new issue
+        local raw_body
+        raw_body=$(jq -r '.body // ""' <<< "$issue_json")
+        if [[ "$raw_body" == "<!-- agent-plan -->"* ]]; then
+            AGENT_PLAN_CONTENT="${raw_body#<!-- agent-plan -->}"
+        fi
+    fi
 
     if [ -z "$AGENT_PLAN_CONTENT" ]; then
         log "fetch-context: no <!-- agent-plan --> comment found on issue $number"

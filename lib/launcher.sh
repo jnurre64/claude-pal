@@ -43,9 +43,14 @@ pal_launch_sync() {
 
     pal_acquire_lock "$run_id" "$repo" "$number"
 
+    # Pre-create log file world-writable so the container's non-root agent
+    # user can also append to it via tee (host tee creates it owned by host
+    # user otherwise, blocking container writes).
+    touch "$run_dir/log" && chmod 0666 "$run_dir/log"
+
     # Sync mode: run in foreground, tee to log
     local exit_code=0
-    docker "${docker_args[@]}" 2>&1 | tee "$run_dir/log" || exit_code=$?
+    docker "${docker_args[@]}" 2>&1 | tee -a "$run_dir/log" || exit_code=$?
 
     pal_release_lock "$repo" "$number"
     return $exit_code
