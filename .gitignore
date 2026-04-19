@@ -1,0 +1,16 @@
+# Secrets
+config.env
+.pal/config.env
+
+# Build artifacts
+*.log
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp

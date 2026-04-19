@@ -1,0 +1,3517 @@
+# claude-pal v1 Implementation Plan
+
+> **For agentic workers:** Use `superpowers:executing-plans` with **one Claude Code session per phase**. Each phase ends with a testable milestone that acts as a review checkpoint. Within phases where tasks are independent, `superpowers:dispatching-parallel-agents` can fan out to subagents — see "Execution strategy" below. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Ship v1 of `claude-pal` — a Claude Code skill set + Docker container that publishes implementation plans to GitHub issues and runs a gated pipeline (adversarial plan review → TDD implementation → post-impl review → retry → PR) inside an ephemeral Linux container.
+
+**Architecture:** Host-side Claude Code skills (bash, Git Bash on Windows) read a user-owned `config.env`, run preflight checks, and invoke `docker run` against a purpose-built Ubuntu image. The container runs a bash entrypoint that orchestrates 3–5 `claude -p` calls (different tool allowlists per phase) with the review-gate prompts vendored from `jnurre64/claude-agent-dispatch`. Communication between host and container is one-directional: host → container via env vars + bind-mounted `/status` directory; container → host via `/status/status.json` and `/status/log`. Async mode adds a forked watcher that fires a desktop notification on container exit.
+
+**Tech Stack:** Bash 5+, Docker 20+ (Linux containers mode), Claude Code CLI (headless `claude -p`), GitHub CLI (`gh`), `jq`, BATS-Core for testing, Ubuntu 24.04 base image, `notify-send` / `osascript` / BurntToast for cross-platform notifications.
+
+**Output location:** This plan is being written to `/home/jonny/claude-pal-plan.md` since the `claude-pal` repo does not exist yet. Once the repo is created in Phase 1, this plan moves to `docs/superpowers/plans/2026-04-18-claude-pal.md` as part of Task 1.1.
+
+**Spec:** See `/home/jonny/claude-pal-design.md` for the full design document. All design decisions referenced below are justified there.
+
+---
+
+## Phase overview
+
+Each phase ends with a testable milestone. Phases must complete in order (later phases depend on earlier), but within a phase some tasks can parallelize.
+
+| Phase | Milestone |
+|---|---|
+| 1. Repo scaffold + base image | `docker build` produces a runnable image with claude CLI + prompts vendored |
+| 2. Container pipeline | `docker run` end-to-end executes a gated implement pipeline against a test issue |
+| 3. `/pal-implement` (sync) | Skill launches the container, streams logs, reports outcome |
+| 4. `/pal-plan` | Skill publishes plan from conversation file to issue comment |
+| 5. Async mode + run registry + `/pal-status`, `/pal-logs`, `/pal-cancel` | Background runs with desktop notification; run management |
+| 6. `/pal-revise` | Skill launches container to address PR review feedback |
+| 7. Cross-platform hardening | macOS Keychain, Windows Credential Manager, NTFS ACL check, Git Bash preflight, `pass` opt-in |
+| 8. Documentation + release prep | Install guides, config examples, UPSTREAM drift check, v1.0.0 tag |
+
+---
+
+## Execution strategy
+
+**One Claude Code session per phase.** Each phase ends with a testable milestone (image builds, `docker run` round-trips, smoke test passes). Use `superpowers:executing-plans` to execute a single phase per fresh session. Do not start the next phase until:
+
+1. All tasks in the current phase are committed.
+2. The phase's milestone has been verified (bats test passes, smoke test round-trips, etc.).
+3. The user has reviewed the diff and approved continuing.
+
+This keeps each session's context focused, preserves a natural review checkpoint between phases, and lets a phase be resumed days later without losing context.
+
+**Subagent fan-out inside parallelizable phases.** Inside a single phase session, `superpowers:dispatching-parallel-agents` can dispatch independent tasks concurrently. Phases where this helps:
+
+- **Phase 3** — `config.sh`, `preflight.sh`, `runs.sh`, `launcher.sh` are independent lib files with no shared edits.
+- **Phase 5** — `notify.sh`, async launcher wiring, `/pal-status`, `/pal-logs`, `/pal-cancel` are largely independent. Keep the async launcher and `/pal-cancel` sequential since both append to `launcher.sh`.
+- **Phase 7** — macOS Keychain, Windows Credential Manager, Linux `pass`, NTFS ACL check — all touch `config.sh` so either serialize the edits or have subagents produce patches that a coordinator applies.
+- **Phase 8** — install guide, config examples, `diff-upstream.sh`, README, CHANGELOG are independent documents.
+
+**Phases 1, 2, 4, 6 are sequential.** Each task modifies the same file as the previous task (e.g., Phase 2 repeatedly appends to `entrypoint.sh` with chained commits). Execute task-by-task without subagents.
+
+**Pre-phase setup (one-time, before execution begins):**
+
+- Phase 1 prereq: local checkout of `claude-agent-dispatch` at `~/claude-agent-dispatch` (used for vendoring).
+- Phase 2 prereq: a GitHub test repo with a seeded issue containing an `<!-- agent-plan -->` comment. Use `recipe-manager-demo`.
+- Phase 6 prereq: a test PR in the same repo with a CHANGES_REQUESTED review.
+- Phase 7 caveat: macOS Keychain, Windows Credential Manager, and NTFS ACL adapters cannot be end-to-end tested on a Linux host. They ship blind on Linux-only runs and must be validated on a Windows machine before tagging v1.0. (Owner has committed to Windows-side validation pre-1.0.)
+
+---
+
+## Phase 1: Repository scaffold and base image
+
+### Task 1.1: Initialize repository and baseline files
+
+**Files:**
+- Create: `~/claude-pal/` (new directory + git repo)
+- Create: `~/claude-pal/README.md`
+- Create: `~/claude-pal/LICENSE`
+- Create: `~/claude-pal/.gitignore`
+- Create: `~/claude-pal/CLAUDE.md`
+- Move: `/home/jonny/claude-pal-design.md` → `~/claude-pal/docs/superpowers/specs/2026-04-18-claude-pal-design.md`
+- Move: `/home/jonny/claude-pal-plan.md` → `~/claude-pal/docs/superpowers/plans/2026-04-18-claude-pal.md`
+
+- [ ] **Step 1: Create directory and initialize git**
+
+```bash
+mkdir -p ~/claude-pal/docs/superpowers/{specs,plans}
+cd ~/claude-pal
+git init
+git branch -M main
+```
+
+- [ ] **Step 2: Move spec and plan into the repo**
+
+```bash
+mv /home/jonny/claude-pal-design.md ~/claude-pal/docs/superpowers/specs/2026-04-18-claude-pal-design.md
+mv /home/jonny/claude-pal-plan.md ~/claude-pal/docs/superpowers/plans/2026-04-18-claude-pal.md
+```
+
+- [ ] **Step 3: Write `.gitignore`**
+
+```gitignore
+# Secrets
+config.env
+.pal/config.env
+
+# Build artifacts
+*.log
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+```
+
+- [ ] **Step 4: Write `LICENSE` (MIT, matching upstream)**
+
+```
+MIT License
+
+Copyright (c) 2026 <owner>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+- [ ] **Step 5: Write `README.md` (minimal placeholder, expanded in Phase 8)**
+
+```markdown
+# claude-pal
+
+Local agent dispatch via Claude Code skills. Ships fresh Claude Code containers against GitHub issues with a gated plan → implement → review pipeline.
+
+See `docs/superpowers/specs/2026-04-18-claude-pal-design.md` for the design document.
+
+**Status:** early development, v0.x. Not yet usable.
+```
+
+- [ ] **Step 6: Write `CLAUDE.md` (project instructions for future Claude sessions)**
+
+```markdown
+# claude-pal
+
+Local agent dispatch via Claude Code skills.
+
+## Key Documentation
+
+- Full design: `docs/superpowers/specs/2026-04-18-claude-pal-design.md`
+- Implementation plan: `docs/superpowers/plans/2026-04-18-claude-pal.md`
+- Upstream tracking (vendored pieces): `UPSTREAM.md`
+
+## Architecture
+
+- `image/Dockerfile` — base Ubuntu image with claude CLI, gh, jq, git, iptables
+- `image/opt/pal/entrypoint.sh` — pipeline orchestrator (bash)
+- `image/opt/pal/allowlist.yaml` — firewall allowlist (data)
+- `image/opt/pal/prompts/` — vendored adversarial/post-impl review prompts
+- `image/opt/pal/lib/` — bash helpers (vendored review-gates.sh etc.)
+- `skills/pal-*/SKILL.md` — Claude Code skills (host-side)
+- `skills/lib/` — shared skill helpers (config loader, notifier, etc.)
+- `tests/` — BATS-Core tests
+
+## Development
+
+- All shell scripts must pass `shellcheck` with zero warnings
+- Tests use BATS-Core
+- Run checks: `shellcheck $(find . -name '*.sh') && bats tests/`
+- Use `set -euo pipefail` in all scripts
+```
+
+- [ ] **Step 7: Initial commit**
+
+```bash
+cd ~/claude-pal
+git add .
+git commit -m "chore: initial repo scaffold with spec and plan"
+```
+
+Expected: commit succeeds; `git log` shows one commit.
+
+### Task 1.2: Check out claude-agent-dispatch for vendoring
+
+**Files:**
+- Read: `~/claude-agent-dispatch/prompts/adversarial-plan.md`
+- Read: `~/claude-agent-dispatch/prompts/post-impl-review.md`
+- Read: `~/claude-agent-dispatch/prompts/post-impl-retry.md`
+- Read: `~/claude-agent-dispatch/prompts/implement.md`
+- Read: `~/claude-agent-dispatch/scripts/lib/review-gates.sh`
+- Read: `~/claude-agent-dispatch/scripts/lib/common.sh`
+
+- [ ] **Step 1: Verify the local checkout is at the expected state**
+
+```bash
+cd ~/claude-agent-dispatch
+git fetch origin
+git log --oneline -5
+git rev-parse HEAD  # record this as the upstream commit SHA for UPSTREAM.md
+```
+
+Expected: clean state on `main`, commits from upstream visible.
+
+- [ ] **Step 2: Capture the upstream SHA for vendoring metadata**
+
+Record the output of `git rev-parse HEAD` from step 1 — it will be written into `UPSTREAM.md` in Task 1.5.
+
+### Task 1.3: Vendor prompts
+
+**Files:**
+- Create: `~/claude-pal/image/opt/pal/prompts/adversarial-plan.md` (copied from upstream)
+- Create: `~/claude-pal/image/opt/pal/prompts/post-impl-review.md` (copied from upstream)
+- Create: `~/claude-pal/image/opt/pal/prompts/post-impl-retry.md` (copied from upstream)
+- Create: `~/claude-pal/image/opt/pal/prompts/implement.md` (copied from upstream, lightly adapted)
+
+- [ ] **Step 1: Create directories**
+
+```bash
+mkdir -p ~/claude-pal/image/opt/pal/prompts
+```
+
+- [ ] **Step 2: Copy adversarial-plan.md verbatim**
+
+```bash
+cp ~/claude-agent-dispatch/prompts/adversarial-plan.md ~/claude-pal/image/opt/pal/prompts/
+```
+
+- [ ] **Step 3: Copy post-impl-review.md verbatim**
+
+```bash
+cp ~/claude-agent-dispatch/prompts/post-impl-review.md ~/claude-pal/image/opt/pal/prompts/
+```
+
+- [ ] **Step 4: Copy post-impl-retry.md verbatim**
+
+```bash
+cp ~/claude-agent-dispatch/prompts/post-impl-retry.md ~/claude-pal/image/opt/pal/prompts/
+```
+
+- [ ] **Step 5: Copy implement.md and lightly adapt**
+
+```bash
+cp ~/claude-agent-dispatch/prompts/implement.md ~/claude-pal/image/opt/pal/prompts/
+```
+
+Now edit `~/claude-pal/image/opt/pal/prompts/implement.md` to remove references to the label state machine. Specifically:
+- Remove any mention of `agent:in-progress` or other `agent:*` labels
+- Keep all TDD, self-review, and commit guidance
+- The prompt's essence — "implement the approved plan with TDD, commit each cycle, do not open a PR" — is preserved
+
+The adapted file's first section should read:
+
+```markdown
+You are implementing an approved plan for a GitHub issue in this repository, running inside an ephemeral claude-pal container.
+
+## Issue Context
+Read the issue details from environment variables:
+- Run: echo "$AGENT_ISSUE_NUMBER" for the issue number
+- Run: echo "$AGENT_ISSUE_TITLE" for the title
+- Run: echo "$AGENT_ISSUE_BODY" for the description
+- Run: echo "$AGENT_COMMENTS" for conversation context
+
+## Approved Plan
+Read the approved implementation plan:
+- Run: echo "$AGENT_PLAN_CONTENT"
+
+This plan has been reviewed and approved. Follow it closely.
+
+[... rest of upstream implement.md content unchanged ...]
+```
+
+- [ ] **Step 6: Commit the vendored prompts**
+
+```bash
+cd ~/claude-pal
+git add image/opt/pal/prompts/
+git commit -m "vendor: import review and implement prompts from claude-agent-dispatch"
+```
+
+### Task 1.4: Vendor review-gates library
+
+**Files:**
+- Create: `~/claude-pal/image/opt/pal/lib/review-gates.sh` (copied from upstream)
+
+- [ ] **Step 1: Copy review-gates.sh**
+
+```bash
+mkdir -p ~/claude-pal/image/opt/pal/lib
+cp ~/claude-agent-dispatch/scripts/lib/review-gates.sh ~/claude-pal/image/opt/pal/lib/
+```
+
+- [ ] **Step 2: Adapt for single-session usage**
+
+Edit `~/claude-pal/image/opt/pal/lib/review-gates.sh`:
+
+- The functions `run_adversarial_plan_review`, `run_post_impl_review`, `handle_post_impl_review_retry`, and the `_extract_review_json` helper are preserved verbatim.
+- The helper functions they depend on (`load_prompt`, `run_claude`, `parse_claude_output`, `set_label`, `log`) are assumed to exist in sibling lib files — we'll provide adapted versions in Task 2.5 (run_claude, parse_claude_output) and Task 2.1 (log). The `set_label` calls in the upstream file must be **stubbed** since we don't have a label state machine:
+
+Replace every `set_label "agent:failed"` with:
+
+```bash
+# No label state machine in claude-pal; status is written to status.json by the entrypoint
+STATUS_OUTCOME="failure"
+STATUS_FAILURE_REASON="adversarial_review_could_not_parse"  # or whatever context
+```
+
+And remove every `set_label "agent:needs-info"` or similar — replace with:
+
+```bash
+STATUS_OUTCOME="clarification_needed"
+```
+
+The `gh issue comment` calls within the review-gates functions are **preserved** — the container still posts comments for clarification questions; only the label side-effects are dropped.
+
+- [ ] **Step 3: Run shellcheck on the adapted file**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/lib/review-gates.sh
+```
+
+Expected: zero warnings. Fix any that appear (usually unquoted expansions in the replaced sections).
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd ~/claude-pal
+git add image/opt/pal/lib/review-gates.sh
+git commit -m "vendor: import review-gates.sh, adapt for single-session flow"
+```
+
+### Task 1.5: Write UPSTREAM.md tracking
+
+**Files:**
+- Create: `~/claude-pal/UPSTREAM.md`
+
+- [ ] **Step 1: Write UPSTREAM.md with source paths, upstream SHA, and modification notes**
+
+```markdown
+# Upstream Vendored Files
+
+This project vendors pieces of `jnurre64/claude-agent-dispatch`. Each file here is tracked with its source path, the upstream commit at time of vendor, and any local modifications.
+
+Resync via `scripts/diff-upstream.sh` (see Phase 8).
+
+## Prompts
+
+| Local path | Source | Upstream SHA | Modifications |
+|---|---|---|---|
+| `image/opt/pal/prompts/adversarial-plan.md` | `prompts/adversarial-plan.md` | <SHA from Task 1.2> | none |
+| `image/opt/pal/prompts/post-impl-review.md` | `prompts/post-impl-review.md` | <SHA from Task 1.2> | none |
+| `image/opt/pal/prompts/post-impl-retry.md` | `prompts/post-impl-retry.md` | <SHA from Task 1.2> | none |
+| `image/opt/pal/prompts/implement.md` | `prompts/implement.md` | <SHA from Task 1.2> | removed label-state-machine references; updated intro to mention claude-pal container |
+
+## Libraries
+
+| Local path | Source | Upstream SHA | Modifications |
+|---|---|---|---|
+| `image/opt/pal/lib/review-gates.sh` | `scripts/lib/review-gates.sh` | <SHA from Task 1.2> | replaced `set_label` calls with STATUS_* variable writes; kept gh issue comment calls |
+
+## Conceptual patterns (not directly copied)
+
+- Data-fetch pattern for gists and attachments (see `scripts/lib/data-fetch.sh` upstream) — reimplemented inline in our entrypoint with the same fetch-on-start, bind-to-env-var shape
+- `_extract_review_json` helper — included in review-gates.sh above
+```
+
+Replace `<SHA from Task 1.2>` with the actual SHA recorded in Task 1.2 Step 1.
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add UPSTREAM.md
+git commit -m "docs: add UPSTREAM.md tracking vendored files"
+```
+
+### Task 1.6: Write base Dockerfile
+
+**Files:**
+- Create: `~/claude-pal/image/Dockerfile`
+
+- [ ] **Step 1: Write Dockerfile**
+
+```dockerfile
+# Base image supports future sbx retargeting via BASE_IMAGE build arg
+ARG BASE_IMAGE=ubuntu:24.04
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git gnupg jq iptables sudo \
+      build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js (for claude CLI npm install)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install gh CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install claude CLI (official npm package)
+RUN npm install -g @anthropic-ai/claude-code@latest
+
+# Non-root user with sudo, matching sbx template convention for future portability
+RUN useradd -m -s /bin/bash -G sudo agent \
+    && echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent
+
+# Copy pipeline assets
+COPY --chown=root:root image/opt/pal /opt/pal
+RUN chmod +x /opt/pal/entrypoint.sh /opt/pal/lib/*.sh 2>/dev/null || true
+
+# Run as agent user by default
+USER agent
+WORKDIR /home/agent
+
+ENTRYPOINT ["/opt/pal/entrypoint.sh"]
+```
+
+- [ ] **Step 2: Verify the file parses as a valid Dockerfile**
+
+```bash
+cd ~/claude-pal
+docker buildx build --target 0 -f image/Dockerfile . --dry-run 2>&1 | head -20 || true
+# (--dry-run is newer docker; alternative: just try a build in step 3)
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd ~/claude-pal
+git add image/Dockerfile
+git commit -m "feat(image): initial Dockerfile with claude CLI, gh, jq, git"
+```
+
+### Task 1.7: Minimal entrypoint that logs and exits
+
+**Files:**
+- Create: `~/claude-pal/image/opt/pal/entrypoint.sh`
+
+- [ ] **Step 1: Write a minimal placeholder entrypoint (full pipeline in Phase 2)**
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+# ─── Args: <event_type> <repo> <number> ─────────────────────────
+EVENT_TYPE="${1:?Usage: entrypoint.sh <event_type> <repo> <number>}"
+REPO="${2:?}"
+NUMBER="${3:?}"
+
+# ─── Status file path (bind-mounted from host) ──────────────────
+STATUS_DIR="${PAL_STATUS_DIR:-/status}"
+mkdir -p "$STATUS_DIR"
+
+log() {
+    printf '[%s] %s\n' "$(date -Iseconds)" "$*" | tee -a "$STATUS_DIR/log"
+}
+
+# ─── Placeholder for Phase 2: report a trivial success and exit ──
+log "claude-pal entrypoint v0.1 (scaffold)"
+log "EVENT_TYPE=$EVENT_TYPE REPO=$REPO NUMBER=$NUMBER"
+log "Verifying claude CLI is present..."
+claude --version | tee -a "$STATUS_DIR/log"
+log "Verifying gh CLI is present..."
+gh --version | tee -a "$STATUS_DIR/log"
+
+cat > "$STATUS_DIR/status.json.tmp" <<EOF
+{
+  "phase": "complete",
+  "outcome": "success",
+  "failure_reason": null,
+  "pr_number": null,
+  "pr_url": null,
+  "commits": [],
+  "event_type": "$EVENT_TYPE",
+  "repo": "$REPO",
+  "number": $NUMBER
+}
+EOF
+mv "$STATUS_DIR/status.json.tmp" "$STATUS_DIR/status.json"
+log "Scaffold run complete."
+```
+
+- [ ] **Step 2: shellcheck**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/entrypoint.sh
+```
+
+Expected: zero warnings.
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd ~/claude-pal
+git add image/opt/pal/entrypoint.sh
+git commit -m "feat(image): scaffold entrypoint.sh (writes status.json on exit)"
+```
+
+### Task 1.8: Image build and smoke test
+
+**Files:**
+- Create: `~/claude-pal/scripts/build-image.sh`
+- Create: `~/claude-pal/tests/test_image_smoke.bats`
+
+- [ ] **Step 1: Add BATS as a submodule**
+
+```bash
+cd ~/claude-pal
+git submodule add https://github.com/bats-core/bats-core.git tests/bats
+git submodule add https://github.com/bats-core/bats-support.git tests/test_helper/bats-support
+git submodule add https://github.com/bats-core/bats-assert.git tests/test_helper/bats-assert
+git commit -m "chore(test): add BATS-core submodules"
+```
+
+- [ ] **Step 2: Write the image build script**
+
+```bash
+mkdir -p ~/claude-pal/scripts
+cat > ~/claude-pal/scripts/build-image.sh <<'EOF'
+#!/bin/bash
+# Build the claude-pal base image.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+TAG="${1:-claude-pal:latest}"
+BASE_IMAGE="${BASE_IMAGE:-ubuntu:24.04}"
+
+cd "$REPO_ROOT"
+docker build \
+    --build-arg BASE_IMAGE="$BASE_IMAGE" \
+    -f image/Dockerfile \
+    -t "$TAG" \
+    .
+EOF
+chmod +x ~/claude-pal/scripts/build-image.sh
+```
+
+- [ ] **Step 3: Write the smoke test**
+
+```bash
+cat > ~/claude-pal/tests/test_image_smoke.bats <<'EOF'
+#!/usr/bin/env bats
+load 'test_helper/bats-support/load'
+load 'test_helper/bats-assert/load'
+
+setup() {
+    REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
+    IMAGE_TAG="claude-pal:test-$RANDOM"
+    STATUS_DIR="$(mktemp -d)"
+}
+
+teardown() {
+    [ -n "${IMAGE_TAG:-}" ] && docker rmi -f "$IMAGE_TAG" 2>/dev/null || true
+    [ -n "${STATUS_DIR:-}" ] && rm -rf "$STATUS_DIR"
+}
+
+@test "image builds from scratch" {
+    run "$REPO_ROOT/scripts/build-image.sh" "$IMAGE_TAG"
+    assert_success
+}
+
+@test "scaffold entrypoint writes status.json and exits 0" {
+    "$REPO_ROOT/scripts/build-image.sh" "$IMAGE_TAG" > /dev/null 2>&1
+    run docker run --rm \
+        -v "$STATUS_DIR:/status" \
+        "$IMAGE_TAG" implement owner/repo 42
+    assert_success
+    assert [ -f "$STATUS_DIR/status.json" ]
+    run jq -r '.outcome' "$STATUS_DIR/status.json"
+    assert_output "success"
+}
+EOF
+```
+
+- [ ] **Step 4: Run the smoke test**
+
+```bash
+cd ~/claude-pal
+./tests/bats/bin/bats tests/test_image_smoke.bats
+```
+
+Expected: both tests pass. Image build is slow the first time (~5 minutes for base layers).
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd ~/claude-pal
+git add scripts/build-image.sh tests/test_image_smoke.bats
+git commit -m "test(image): smoke test for image build and scaffold entrypoint"
+```
+
+**Milestone:** Running `./tests/bats/bin/bats tests/test_image_smoke.bats` builds the image and runs the scaffold entrypoint end-to-end. Phase 1 complete.
+
+---
+
+## Phase 2: Container entrypoint pipeline
+
+### Task 2.1: Entrypoint skeleton with logging, status, and error trap
+
+**Files:**
+- Modify: `~/claude-pal/image/opt/pal/entrypoint.sh`
+
+- [ ] **Step 1: Replace the scaffold entrypoint with structured skeleton**
+
+```bash
+#!/bin/bash
+# shellcheck disable=SC1091  # Sourced lib files resolved at runtime
+set -euo pipefail
+
+# ─── Args: <event_type> <repo> <number> ─────────────────────────
+EVENT_TYPE="${1:?Usage: entrypoint.sh <event_type> <repo> <number>}"
+REPO="${2:?}"
+NUMBER="${3:?}"
+
+# ─── Paths ───────────────────────────────────────────────────────
+PAL_HOME="/opt/pal"
+PROMPTS_DIR="$PAL_HOME/prompts"
+LIB_DIR="$PAL_HOME/lib"
+STATUS_DIR="${PAL_STATUS_DIR:-/status}"
+WORKTREE_DIR="${WORKTREE_DIR:-/home/agent/work}"
+AGENT_DATA_DIR="${AGENT_DATA_DIR:-/home/agent/.agent-data}"
+
+mkdir -p "$STATUS_DIR" "$WORKTREE_DIR" "$AGENT_DATA_DIR"
+
+# ─── Status tracking (mutated across phases, emitted at end) ────
+STATUS_PHASE="init"
+STATUS_OUTCOME="failure"            # default; set to "success" on happy path
+STATUS_FAILURE_REASON=""
+STATUS_PR_NUMBER="null"
+STATUS_PR_URL="null"
+STATUS_COMMITS="[]"
+STATUS_REVIEW_CONCERNS_ADDRESSED="[]"
+STATUS_REVIEW_CONCERNS_UNRESOLVED="[]"
+STATUS_STARTED_AT="$(date -u +%FT%TZ)"
+
+# ─── Logging ─────────────────────────────────────────────────────
+LOG_FILE="$STATUS_DIR/log"
+log() {
+    printf '[%s] %s\n' "$(date -Iseconds)" "$*" | tee -a "$LOG_FILE" >&2
+}
+
+# ─── status.json writer (atomic) ─────────────────────────────────
+write_status() {
+    local completed_at="${1:-$(date -u +%FT%TZ)}"
+    cat > "$STATUS_DIR/status.json.tmp" <<EOF
+{
+  "phase": "$STATUS_PHASE",
+  "outcome": "$STATUS_OUTCOME",
+  "failure_reason": $([ -z "$STATUS_FAILURE_REASON" ] && echo null || printf '"%s"' "$STATUS_FAILURE_REASON"),
+  "started_at": "$STATUS_STARTED_AT",
+  "completed_at": "$completed_at",
+  "pr_number": $STATUS_PR_NUMBER,
+  "pr_url": $STATUS_PR_URL,
+  "commits": $STATUS_COMMITS,
+  "review_concerns_addressed": $STATUS_REVIEW_CONCERNS_ADDRESSED,
+  "review_concerns_unresolved": $STATUS_REVIEW_CONCERNS_UNRESOLVED,
+  "event_type": "$EVENT_TYPE",
+  "repo": "$REPO",
+  "number": $NUMBER
+}
+EOF
+    mv "$STATUS_DIR/status.json.tmp" "$STATUS_DIR/status.json"
+}
+
+# ─── Global error trap: write a failure status before exit ──────
+on_error() {
+    local ec=$?
+    [ "$ec" -eq 0 ] && return 0
+    log "entrypoint failed at line ${1:-?} with exit code $ec (phase=$STATUS_PHASE)"
+    if [ -z "$STATUS_FAILURE_REASON" ]; then
+        STATUS_FAILURE_REASON="uncaught_error_at_line_${1:-unknown}_exit_${ec}"
+    fi
+    STATUS_OUTCOME="failure"
+    write_status
+}
+trap 'on_error $LINENO' ERR
+trap 'write_status' EXIT
+
+# ─── Source lib files (review-gates provides gate functions) ────
+# shellcheck source=/dev/null
+. "$LIB_DIR/review-gates.sh"
+
+# ─── Main pipeline (filled in by later tasks) ───────────────────
+log "claude-pal v0.2 entrypoint"
+log "event=$EVENT_TYPE repo=$REPO number=$NUMBER"
+
+STATUS_PHASE="fetching_context"
+# (Task 2.3 adds repo clone + worktree)
+# (Task 2.4 adds issue/plan fetching)
+# (Tasks 2.5–2.11 add pipeline phases)
+
+# Placeholder for now so the skeleton runs to completion
+STATUS_OUTCOME="success"
+STATUS_PHASE="complete"
+```
+
+- [ ] **Step 2: shellcheck**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/entrypoint.sh
+```
+
+Expected: zero warnings.
+
+- [ ] **Step 3: Rebuild and rerun smoke test**
+
+```bash
+cd ~/claude-pal
+./tests/bats/bin/bats tests/test_image_smoke.bats
+```
+
+Expected: both tests still pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd ~/claude-pal
+git add image/opt/pal/entrypoint.sh
+git commit -m "feat(entrypoint): skeleton with logging, status tracking, error trap"
+```
+
+### Task 2.2: Firewall allowlist application
+
+**Files:**
+- Create: `~/claude-pal/image/opt/pal/allowlist.yaml`
+- Create: `~/claude-pal/image/opt/pal/lib/firewall.sh`
+- Modify: `~/claude-pal/image/opt/pal/entrypoint.sh` (source + call firewall apply)
+
+- [ ] **Step 1: Write the default allowlist**
+
+```yaml
+# image/opt/pal/allowlist.yaml
+# Outbound domains permitted from the container. Extended per-run via PAL_ALLOWLIST_EXTRA_DOMAINS.
+
+domains:
+  # Anthropic
+  - api.anthropic.com
+  - console.anthropic.com
+  # GitHub
+  - github.com
+  - api.github.com
+  - codeload.github.com
+  - objects.githubusercontent.com
+  - raw.githubusercontent.com
+  - uploads.github.com
+  # Package registries (base)
+  - registry.npmjs.org
+  - pypi.org
+  - files.pythonhosted.org
+  - api.nuget.org
+  # Ubuntu repositories (for apt during build; runtime usually skips)
+  - deb.debian.org
+  - security.ubuntu.com
+  - archive.ubuntu.com
+```
+
+- [ ] **Step 2: Write firewall.sh with iptables apply logic**
+
+```bash
+# image/opt/pal/lib/firewall.sh
+# Apply deny-by-default outbound allowlist via iptables.
+# Requires: iptables, dig (via host command), sudo
+# Inputs: allowlist.yaml (domains list) + PAL_ALLOWLIST_EXTRA_DOMAINS env var
+
+apply_firewall() {
+    local allowlist_file="${1:-/opt/pal/allowlist.yaml}"
+    local extra_domains_csv="${PAL_ALLOWLIST_EXTRA_DOMAINS:-}"
+
+    if [ ! -f "$allowlist_file" ]; then
+        log "firewall: allowlist file not found at $allowlist_file"
+        return 1
+    fi
+
+    # Parse YAML (jq via yq-lite approach: very limited schema, one-level 'domains' list)
+    local domains
+    domains=$(awk '/^domains:/{flag=1;next}/^[^[:space:]-]/{flag=0}flag&&/^[[:space:]]*-[[:space:]]+/{gsub(/^[[:space:]]*-[[:space:]]+/,""); print}' "$allowlist_file")
+
+    if [ -n "$extra_domains_csv" ]; then
+        domains+=$'\n'
+        domains+=$(printf '%s\n' "$extra_domains_csv" | tr ',' '\n' | tr -d ' ')
+    fi
+
+    log "firewall: allowlist contains $(printf '%s\n' "$domains" | grep -c . || true) domains"
+
+    # Default policy: allow all loopback, deny all other outbound initially
+    sudo iptables -F OUTPUT
+    sudo iptables -P OUTPUT DROP
+    sudo iptables -A OUTPUT -o lo -j ACCEPT
+    # Allow DNS to resolver (so we can resolve domain names to IPs below)
+    sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+    sudo iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+    # Allow established/related inbound responses
+    sudo iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+    while IFS= read -r domain; do
+        [ -z "$domain" ] && continue
+        local ips
+        ips=$(getent ahosts "$domain" | awk '{print $1}' | sort -u || true)
+        if [ -z "$ips" ]; then
+            log "firewall: warning, could not resolve $domain (skipping)"
+            continue
+        fi
+        while IFS= read -r ip; do
+            [ -z "$ip" ] && continue
+            sudo iptables -A OUTPUT -d "$ip" -p tcp --dport 443 -j ACCEPT
+            sudo iptables -A OUTPUT -d "$ip" -p tcp --dport 80 -j ACCEPT
+        done <<< "$ips"
+    done <<< "$domains"
+
+    log "firewall: allowlist applied (default-DROP with IP-pinned ACCEPT rules)"
+}
+```
+
+- [ ] **Step 3: Wire firewall.sh into entrypoint**
+
+In `~/claude-pal/image/opt/pal/entrypoint.sh`, after the review-gates source line, add:
+
+```bash
+# shellcheck source=/dev/null
+. "$LIB_DIR/firewall.sh"
+
+STATUS_PHASE="applying_firewall"
+apply_firewall "$PAL_HOME/allowlist.yaml" || {
+    STATUS_FAILURE_REASON="firewall_apply_failed"
+    exit 1
+}
+```
+
+- [ ] **Step 4: shellcheck**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/lib/firewall.sh ~/claude-pal/image/opt/pal/entrypoint.sh
+```
+
+Expected: zero warnings.
+
+- [ ] **Step 5: Rebuild image and verify firewall rules install**
+
+```bash
+cd ~/claude-pal
+./scripts/build-image.sh claude-pal:dev
+docker run --rm --cap-add=NET_ADMIN \
+  -e CLAUDE_CODE_OAUTH_TOKEN=fake-for-smoke \
+  -e GH_TOKEN=fake-for-smoke \
+  -v /tmp/pal-smoke:/status \
+  claude-pal:dev implement owner/repo 42 2>&1 | tail -30
+cat /tmp/pal-smoke/status.json | jq .
+```
+
+Expected: log shows "firewall: allowlist applied (default-DROP with IP-pinned ACCEPT rules)" and status.json reports `"outcome": "success"` (because the rest of the pipeline is still stubbed).
+
+Note: `--cap-add=NET_ADMIN` is required for iptables inside the container. The skill will pass this flag in Task 3.4.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd ~/claude-pal
+git add image/opt/pal/allowlist.yaml image/opt/pal/lib/firewall.sh image/opt/pal/entrypoint.sh
+git commit -m "feat(entrypoint): apply deny-by-default iptables allowlist at startup"
+```
+
+### Task 2.3: Repo clone and worktree setup
+
+**Files:**
+- Create: `~/claude-pal/image/opt/pal/lib/worktree.sh`
+- Modify: `~/claude-pal/image/opt/pal/entrypoint.sh`
+
+- [ ] **Step 1: Write worktree.sh**
+
+```bash
+# image/opt/pal/lib/worktree.sh
+# Clone the target repo and create a worktree for this run.
+# Uses GH_TOKEN for auth.
+
+setup_worktree() {
+    local repo="$1"       # owner/name
+    local number="$2"     # issue or PR number
+    local event_type="$3" # implement or revise
+
+    local repo_cache="/home/agent/.cache/repos/$repo"
+    local branch_name="agent/issue-${number}"
+
+    # For revise, branch_name comes from the PR (filled in Task 6.1); for implement, we create it fresh
+    mkdir -p "$(dirname "$repo_cache")"
+
+    if [ ! -d "$repo_cache/.git" ]; then
+        log "worktree: cloning $repo to $repo_cache"
+        GH_TOKEN="$GH_TOKEN" gh repo clone "$repo" "$repo_cache" -- --no-tags
+    else
+        log "worktree: fetching latest for $repo"
+        (cd "$repo_cache" && git fetch --prune origin)
+    fi
+
+    # Create worktree on a fresh branch from origin/main (implement) or from PR branch (revise)
+    if [ "$event_type" = "revise" ]; then
+        local pr_branch
+        pr_branch=$(GH_TOKEN="$GH_TOKEN" gh pr view "$number" --repo "$repo" --json headRefName --jq .headRefName)
+        log "worktree: checking out PR branch $pr_branch"
+        (cd "$repo_cache" && git fetch origin "$pr_branch":"$pr_branch" 2>/dev/null || true)
+        git -C "$repo_cache" worktree add "$WORKTREE_DIR" "$pr_branch"
+        BRANCH_NAME="$pr_branch"
+    else
+        log "worktree: creating worktree on $branch_name from origin/main"
+        git -C "$repo_cache" worktree add -B "$branch_name" "$WORKTREE_DIR" origin/main
+        BRANCH_NAME="$branch_name"
+    fi
+
+    # Configure git identity inside the worktree
+    local bot_name="${AGENT_GIT_USER_NAME:-claude-pal}"
+    local bot_email="${AGENT_GIT_USER_EMAIL:-claude-pal@local}"
+    git -C "$WORKTREE_DIR" config user.name "$bot_name"
+    git -C "$WORKTREE_DIR" config user.email "$bot_email"
+
+    log "worktree: ready at $WORKTREE_DIR on branch $BRANCH_NAME"
+}
+```
+
+- [ ] **Step 2: Wire into entrypoint**
+
+In `entrypoint.sh`, after the firewall block:
+
+```bash
+# shellcheck source=/dev/null
+. "$LIB_DIR/worktree.sh"
+
+STATUS_PHASE="cloning"
+setup_worktree "$REPO" "$NUMBER" "$EVENT_TYPE" || {
+    STATUS_FAILURE_REASON="worktree_setup_failed"
+    exit 1
+}
+```
+
+- [ ] **Step 3: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/lib/worktree.sh ~/claude-pal/image/opt/pal/entrypoint.sh
+cd ~/claude-pal
+git add image/opt/pal/lib/worktree.sh image/opt/pal/entrypoint.sh
+git commit -m "feat(entrypoint): clone repo and setup worktree per run"
+```
+
+### Task 2.4: Fetch issue body and plan comment
+
+**Files:**
+- Create: `~/claude-pal/image/opt/pal/lib/fetch-context.sh`
+- Modify: `~/claude-pal/image/opt/pal/entrypoint.sh`
+
+- [ ] **Step 1: Write fetch-context.sh**
+
+```bash
+# image/opt/pal/lib/fetch-context.sh
+# Fetch issue + plan comment (or PR context for revise) and export as env vars.
+
+fetch_issue_context() {
+    local repo="$1"
+    local number="$2"
+
+    local issue_json
+    issue_json=$(gh issue view "$number" --repo "$repo" --json title,body,comments 2>/dev/null) || {
+        log "fetch-context: failed to load issue $number on $repo"
+        return 1
+    }
+
+    AGENT_ISSUE_NUMBER="$number"
+    AGENT_ISSUE_TITLE=$(jq -r .title <<< "$issue_json")
+    AGENT_ISSUE_BODY=$(jq -r .body <<< "$issue_json")
+    AGENT_COMMENTS=$(jq -r '.comments[] | "## " + .author.login + " at " + .createdAt + "\n" + .body' <<< "$issue_json")
+
+    # Find the latest <!-- agent-plan --> comment
+    AGENT_PLAN_CONTENT=$(jq -r '[.comments[] | select(.body | startswith("<!-- agent-plan -->"))] | last | .body // ""' <<< "$issue_json" | sed 's|^<!-- agent-plan -->||')
+
+    if [ -z "$AGENT_PLAN_CONTENT" ]; then
+        log "fetch-context: no <!-- agent-plan --> comment found on issue $number"
+        return 2  # caller handles "no plan" specially
+    fi
+
+    export AGENT_ISSUE_NUMBER AGENT_ISSUE_TITLE AGENT_ISSUE_BODY AGENT_COMMENTS AGENT_PLAN_CONTENT
+    log "fetch-context: loaded issue $number (plan length: $(printf '%s' "$AGENT_PLAN_CONTENT" | wc -c) bytes)"
+}
+
+fetch_pr_context() {
+    local repo="$1"
+    local pr_number="$2"
+
+    local pr_json
+    pr_json=$(gh pr view "$pr_number" --repo "$repo" --json title,body,comments,reviews,headRefName) || {
+        log "fetch-context: failed to load PR $pr_number on $repo"
+        return 1
+    }
+
+    AGENT_PR_NUMBER="$pr_number"
+    AGENT_PR_TITLE=$(jq -r .title <<< "$pr_json")
+    AGENT_PR_BODY=$(jq -r .body <<< "$pr_json")
+    AGENT_PR_BRANCH=$(jq -r .headRefName <<< "$pr_json")
+
+    # Gather review feedback (general + inline)
+    AGENT_REVIEW_FEEDBACK=$(jq -r '
+        [.reviews[] | select(.state=="CHANGES_REQUESTED") | "## Reviewer " + .author.login + " (" + .submittedAt + ")\n" + .body] +
+        [.comments[] | "## Comment by " + .author.login + "\n" + .body]
+        | join("\n\n")
+    ' <<< "$pr_json")
+
+    # Also fetch linked issue for plan lookup
+    local linked_issue
+    linked_issue=$(gh pr view "$pr_number" --repo "$repo" --json body --jq '.body' | grep -Eoi 'closes?[[:space:]]+#([0-9]+)' | head -1 | grep -Eo '[0-9]+' || true)
+    if [ -n "$linked_issue" ]; then
+        fetch_issue_context "$repo" "$linked_issue" || true
+    fi
+
+    export AGENT_PR_NUMBER AGENT_PR_TITLE AGENT_PR_BODY AGENT_PR_BRANCH AGENT_REVIEW_FEEDBACK
+    log "fetch-context: loaded PR $pr_number (branch $AGENT_PR_BRANCH, review feedback length: $(printf '%s' "$AGENT_REVIEW_FEEDBACK" | wc -c) bytes)"
+}
+```
+
+- [ ] **Step 2: Wire into entrypoint**
+
+In `entrypoint.sh`, after the worktree block:
+
+```bash
+# shellcheck source=/dev/null
+. "$LIB_DIR/fetch-context.sh"
+
+STATUS_PHASE="fetching_context"
+if [ "$EVENT_TYPE" = "implement" ]; then
+    set +e
+    fetch_issue_context "$REPO" "$NUMBER"
+    ctx_rc=$?
+    set -e
+    if [ "$ctx_rc" -eq 2 ]; then
+        STATUS_FAILURE_REASON="no_plan_found"
+        exit 1
+    elif [ "$ctx_rc" -ne 0 ]; then
+        STATUS_FAILURE_REASON="issue_fetch_failed"
+        exit 1
+    fi
+elif [ "$EVENT_TYPE" = "revise" ]; then
+    fetch_pr_context "$REPO" "$NUMBER" || {
+        STATUS_FAILURE_REASON="pr_fetch_failed"
+        exit 1
+    }
+else
+    STATUS_FAILURE_REASON="unknown_event_type_${EVENT_TYPE}"
+    exit 1
+fi
+```
+
+- [ ] **Step 3: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/lib/fetch-context.sh
+cd ~/claude-pal
+git add image/opt/pal/lib/fetch-context.sh image/opt/pal/entrypoint.sh
+git commit -m "feat(entrypoint): fetch issue/plan or PR context from GitHub"
+```
+
+### Task 2.5: run_claude and load_prompt helpers
+
+**Files:**
+- Create: `~/claude-pal/image/opt/pal/lib/claude-runner.sh`
+- Modify: `~/claude-pal/image/opt/pal/entrypoint.sh`
+
+- [ ] **Step 1: Write claude-runner.sh**
+
+```bash
+# image/opt/pal/lib/claude-runner.sh
+# Invoke claude -p with phase-specific tool allowlists and parse JSON output.
+
+load_prompt() {
+    local name="$1"
+    local path="$PROMPTS_DIR/${name}.md"
+    if [ ! -f "$path" ]; then
+        log "claude-runner: prompt not found at $path"
+        return 1
+    fi
+    cat "$path"
+}
+
+run_claude() {
+    local prompt="$1"
+    local allowed_tools="${2:-Read,Write,Edit,Bash(git *),Bash(ls *)}"
+    local model_override="${3:-}"
+
+    cd "$WORKTREE_DIR"
+    local stderr_log="$STATUS_DIR/claude-stderr-$(date +%s).log"
+    local claude_args=(
+        -p "$prompt"
+        --allowedTools "$allowed_tools"
+        --disallowedTools "${AGENT_DISALLOWED_TOOLS:-mcp__github__*}"
+        --max-turns "${AGENT_MAX_TURNS:-50}"
+        --output-format json
+    )
+    if [ -n "$model_override" ]; then
+        claude_args+=(--model "$model_override")
+    fi
+
+    local timeout="${AGENT_TIMEOUT:-3600}"
+    timeout "$timeout" claude "${claude_args[@]}" 2>"$stderr_log" || {
+        local ec=$?
+        log "claude-runner: claude exited with code $ec (stderr: $(head -10 "$stderr_log"))"
+        echo '{"result":"claude timed out or errored","error":true}'
+    }
+}
+
+parse_claude_output() {
+    local result="$1"
+    local out
+    out=$(echo "$result" | jq -r '.result // .result_text // empty' 2>/dev/null || echo "")
+    if [ -z "$out" ]; then
+        out="$result"
+    fi
+    echo "$out"
+}
+```
+
+- [ ] **Step 2: Wire into entrypoint**
+
+In `entrypoint.sh`, after the other source lines:
+
+```bash
+# shellcheck source=/dev/null
+. "$LIB_DIR/claude-runner.sh"
+```
+
+- [ ] **Step 3: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/lib/claude-runner.sh
+cd ~/claude-pal
+git add image/opt/pal/lib/claude-runner.sh image/opt/pal/entrypoint.sh
+git commit -m "feat(entrypoint): add claude-runner lib (load_prompt, run_claude, parse_claude_output)"
+```
+
+### Task 2.6: Gate A — adversarial plan review
+
+**Files:**
+- Modify: `~/claude-pal/image/opt/pal/entrypoint.sh`
+
+- [ ] **Step 1: Wire Gate A into the pipeline**
+
+In `entrypoint.sh`, after the fetch_context block, for `implement` event type only:
+
+```bash
+if [ "$EVENT_TYPE" = "implement" ]; then
+    STATUS_PHASE="adversarial_review"
+    AGENT_ADVERSARIAL_PLAN_REVIEW="${AGENT_ADVERSARIAL_PLAN_REVIEW:-true}"
+    AGENT_ALLOWED_TOOLS_TRIAGE="${AGENT_ALLOWED_TOOLS_TRIAGE:-Read,Glob,Grep,Bash(ls *),Bash(git log *),Bash(git diff *),Bash(git show *),Bash(echo *)}"
+    AGENT_MODEL_ADVERSARIAL_PLAN="${AGENT_MODEL_ADVERSARIAL_PLAN:-}"
+    if ! run_adversarial_plan_review; then
+        # review-gates.sh sets STATUS_OUTCOME and STATUS_FAILURE_REASON on failure modes
+        exit 1
+    fi
+fi
+```
+
+- [ ] **Step 2: Verify review-gates.sh's run_adversarial_plan_review references these env vars**
+
+Check the vendored file mentions `AGENT_ADVERSARIAL_PLAN_REVIEW`, `AGENT_ALLOWED_TOOLS_TRIAGE`, `AGENT_MODEL_ADVERSARIAL_PLAN`. If any are referenced under different names, normalize in Task 1.4's adaptation.
+
+- [ ] **Step 3: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/entrypoint.sh
+cd ~/claude-pal
+git add image/opt/pal/entrypoint.sh
+git commit -m "feat(entrypoint): Gate A adversarial plan review wired in for implement flow"
+```
+
+### Task 2.7: Implement phase with TDD retry loop
+
+**Files:**
+- Modify: `~/claude-pal/image/opt/pal/entrypoint.sh`
+
+- [ ] **Step 1: Add the implement phase with retry loop**
+
+In `entrypoint.sh`, after Gate A:
+
+```bash
+STATUS_PHASE="implementing"
+AGENT_ALLOWED_TOOLS_IMPLEMENT="${AGENT_ALLOWED_TOOLS_IMPLEMENT:-Read,Write,Edit,Glob,Grep,Bash(git *),Bash(ls *),Bash(cat *),Bash(echo *),Bash(mkdir *),Bash(mv *),Bash(cp *),Bash(rm *),Bash(chmod *)}"
+# Plus project-specific test and setup command tools:
+if [ -n "${AGENT_TEST_COMMAND:-}" ]; then
+    AGENT_ALLOWED_TOOLS_IMPLEMENT="${AGENT_ALLOWED_TOOLS_IMPLEMENT},Bash(${AGENT_TEST_COMMAND%% *} *)"
+fi
+if [ -n "${AGENT_TEST_SETUP_COMMAND:-}" ]; then
+    AGENT_ALLOWED_TOOLS_IMPLEMENT="${AGENT_ALLOWED_TOOLS_IMPLEMENT},Bash(${AGENT_TEST_SETUP_COMMAND%% *} *)"
+fi
+AGENT_MODEL_IMPLEMENT="${AGENT_MODEL_IMPLEMENT:-}"
+
+# Load appropriate prompt (implement for issue, revise for PR feedback)
+if [ "$EVENT_TYPE" = "revise" ]; then
+    impl_prompt=$(load_prompt "post-impl-retry")  # Reuse retry prompt for PR revise
+    export AGENT_REVIEW_CONCERNS="$AGENT_REVIEW_FEEDBACK"
+else
+    impl_prompt=$(load_prompt "implement")
+fi
+
+# Capture starting SHA to detect "no commits" case
+start_sha=$(git -C "$WORKTREE_DIR" rev-parse HEAD)
+
+# TDD retry loop: run implement; if tests fail, feed output back; up to N retries
+AGENT_IMPL_MAX_RETRIES="${AGENT_IMPL_MAX_RETRIES:-2}"
+retry=0
+while [ "$retry" -le "$AGENT_IMPL_MAX_RETRIES" ]; do
+    log "implement: attempt $((retry+1)) of $((AGENT_IMPL_MAX_RETRIES+1))"
+    result=$(run_claude "$impl_prompt" "$AGENT_ALLOWED_TOOLS_IMPLEMENT" "$AGENT_MODEL_IMPLEMENT")
+    claude_output=$(parse_claude_output "$result")
+    log "implement: claude output (first 500 chars): ${claude_output:0:500}"
+
+    # If AGENT_TEST_COMMAND is set, run it; pass on green, feed failure back if red
+    if [ -n "${AGENT_TEST_COMMAND:-}" ]; then
+        STATUS_PHASE="testing"
+        if [ -n "${AGENT_TEST_SETUP_COMMAND:-}" ]; then
+            (cd "$WORKTREE_DIR" && eval "$AGENT_TEST_SETUP_COMMAND") >> "$LOG_FILE" 2>&1 || log "warn: test setup exited non-zero"
+        fi
+
+        set +e
+        test_output=$(cd "$WORKTREE_DIR" && eval "$AGENT_TEST_COMMAND" 2>&1)
+        test_exit=$?
+        set -e
+
+        if [ "$test_exit" -eq 0 ]; then
+            log "implement: tests green on attempt $((retry+1))"
+            break
+        fi
+
+        log "implement: tests failed on attempt $((retry+1)); feeding output back"
+        # Extend the prompt with failing output for next iteration
+        impl_prompt="$impl_prompt
+
+## Previous attempt failed tests
+\`\`\`
+$(echo "$test_output" | tail -80)
+\`\`\`
+
+The code you just wrote did not pass tests. Investigate, fix, and try again."
+        retry=$((retry+1))
+    else
+        log "implement: no AGENT_TEST_COMMAND set; accepting implement output as-is"
+        break
+    fi
+done
+
+if [ -n "${AGENT_TEST_COMMAND:-}" ] && [ "$test_exit" -ne 0 ]; then
+    STATUS_FAILURE_REASON="tests_failed_after_${AGENT_IMPL_MAX_RETRIES}_retries"
+    exit 1
+fi
+
+# Capture post-implement commits
+end_sha=$(git -C "$WORKTREE_DIR" rev-parse HEAD)
+if [ "$start_sha" = "$end_sha" ]; then
+    STATUS_FAILURE_REASON="empty_diff"
+    exit 1
+fi
+
+STATUS_COMMITS=$(git -C "$WORKTREE_DIR" log --format='"%h"' "${start_sha}..${end_sha}" | jq -s 'map(.|tostring|fromjson)' -R | jq -sc '.[0]' 2>/dev/null || echo '[]')
+log "implement: captured $(git -C "$WORKTREE_DIR" rev-list --count "${start_sha}..${end_sha}") new commits"
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/entrypoint.sh
+cd ~/claude-pal
+git add image/opt/pal/entrypoint.sh
+git commit -m "feat(entrypoint): implement phase with TDD retry loop and test-fail feedback"
+```
+
+### Task 2.8: Gate B — post-impl review and retry
+
+**Files:**
+- Modify: `~/claude-pal/image/opt/pal/entrypoint.sh`
+
+- [ ] **Step 1: Add Gate B after implement**
+
+In `entrypoint.sh`, after the implement block:
+
+```bash
+STATUS_PHASE="post_impl_review"
+AGENT_POST_IMPL_REVIEW="${AGENT_POST_IMPL_REVIEW:-true}"
+AGENT_POST_IMPL_REVIEW_MAX_RETRIES="${AGENT_POST_IMPL_REVIEW_MAX_RETRIES:-1}"
+AGENT_MODEL_POST_IMPL_REVIEW="${AGENT_MODEL_POST_IMPL_REVIEW:-}"
+AGENT_MODEL_POST_IMPL_RETRY="${AGENT_MODEL_POST_IMPL_RETRY:-}"
+
+if ! run_post_impl_review; then
+    # review-gates.sh sets POST_IMPL_REVIEW_CONCERNS
+    STATUS_PHASE="post_impl_retry"
+    if ! handle_post_impl_review_retry "$AGENT_ALLOWED_TOOLS_IMPLEMENT"; then
+        STATUS_OUTCOME="review_concerns_unresolved"
+        STATUS_REVIEW_CONCERNS_UNRESOLVED=$(jq -Rs 'split("\n") | map(select(. != ""))' <<< "$POST_IMPL_REVIEW_CONCERNS")
+        STATUS_FAILURE_REASON="post_impl_review_unresolved"
+        exit 1
+    else
+        STATUS_REVIEW_CONCERNS_ADDRESSED=$(jq -Rs 'split("\n") | map(select(. != ""))' <<< "$REVIEW_RETRY_CONCERNS")
+    fi
+fi
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/entrypoint.sh
+cd ~/claude-pal
+git add image/opt/pal/entrypoint.sh
+git commit -m "feat(entrypoint): Gate B post-impl review + retry with concern handling"
+```
+
+### Task 2.9: Push branch and create PR
+
+**Files:**
+- Modify: `~/claude-pal/image/opt/pal/entrypoint.sh`
+
+- [ ] **Step 1: Add push + PR create for implement; push-only for revise**
+
+In `entrypoint.sh`, after Gate B:
+
+```bash
+STATUS_PHASE="pushing_pr"
+
+# Push branch
+if ! git -C "$WORKTREE_DIR" push -u origin "$BRANCH_NAME"; then
+    STATUS_FAILURE_REASON="git_push_failed"
+    exit 1
+fi
+log "pushed branch $BRANCH_NAME"
+
+if [ "$EVENT_TYPE" = "revise" ]; then
+    # No new PR; the existing PR picks up the push
+    STATUS_PR_NUMBER="$NUMBER"
+    existing_pr_url=$(gh pr view "$NUMBER" --repo "$REPO" --json url --jq .url)
+    STATUS_PR_URL="\"$existing_pr_url\""
+    log "revise: new commits pushed to existing PR #$NUMBER"
+else
+    # Create PR
+    local_pr_title="${AGENT_ISSUE_TITLE:-claude-pal implementation}"
+    local_pr_body="Closes #${NUMBER}
+
+Implemented by claude-pal based on the approved plan in issue #${NUMBER}."
+
+    pr_create_output=$(gh pr create \
+        --repo "$REPO" \
+        --title "$local_pr_title" \
+        --body "$local_pr_body" \
+        --base main \
+        --head "$BRANCH_NAME" 2>&1) || {
+            STATUS_FAILURE_REASON="pr_create_failed: ${pr_create_output}"
+            exit 1
+        }
+    STATUS_PR_URL="\"$(echo "$pr_create_output" | tail -1)\""
+    STATUS_PR_NUMBER=$(echo "$STATUS_PR_URL" | grep -Eo '/pull/[0-9]+' | grep -Eo '[0-9]+')
+    log "created PR at $STATUS_PR_URL"
+fi
+
+STATUS_OUTCOME="success"
+STATUS_PHASE="complete"
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/image/opt/pal/entrypoint.sh
+cd ~/claude-pal
+git add image/opt/pal/entrypoint.sh
+git commit -m "feat(entrypoint): push branch and create PR (or update PR for revise)"
+```
+
+### Task 2.10: End-to-end container pipeline test
+
+**Files:**
+- Create: `~/claude-pal/tests/test_container_pipeline.bats`
+- Requires: a test GitHub repo the developer owns + a test issue with a trivial plan
+
+- [ ] **Step 1: Prepare a test repo and issue manually**
+
+This is a one-time manual step (documented here; tests use repo name env var):
+1. Create a toy repo in your GitHub account, e.g., `claude-pal-smoketest`
+2. Add a README and a trivial test file with a failing test
+3. Open an issue with a minimal `<!-- agent-plan -->` comment describing a trivial fix
+
+- [ ] **Step 2: Write the integration test**
+
+```bash
+cat > ~/claude-pal/tests/test_container_pipeline.bats <<'EOF'
+#!/usr/bin/env bats
+load 'test_helper/bats-support/load'
+load 'test_helper/bats-assert/load'
+
+setup() {
+    REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
+    IMAGE_TAG="claude-pal:test-pipeline-$RANDOM"
+    STATUS_DIR="$(mktemp -d)"
+    TEST_REPO="${PAL_TEST_REPO:?set PAL_TEST_REPO to owner/claude-pal-smoketest}"
+    TEST_ISSUE="${PAL_TEST_ISSUE:?set PAL_TEST_ISSUE to the test issue number}"
+    : "${CLAUDE_CODE_OAUTH_TOKEN:?required}"
+    : "${GH_TOKEN:?required}"
+}
+
+teardown() {
+    [ -n "${IMAGE_TAG:-}" ] && docker rmi -f "$IMAGE_TAG" 2>/dev/null || true
+    [ -n "${STATUS_DIR:-}" ] && rm -rf "$STATUS_DIR"
+}
+
+@test "full implement pipeline round-trips on smoketest issue" {
+    "$REPO_ROOT/scripts/build-image.sh" "$IMAGE_TAG" > /dev/null 2>&1
+
+    run docker run --rm \
+        --cap-add=NET_ADMIN \
+        -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN" \
+        -e GH_TOKEN="$GH_TOKEN" \
+        -e AGENT_TEST_COMMAND="${PAL_TEST_CMD:-}" \
+        -v "$STATUS_DIR:/status" \
+        --timeout 1800 \
+        "$IMAGE_TAG" implement "$TEST_REPO" "$TEST_ISSUE"
+    assert_success
+
+    assert [ -f "$STATUS_DIR/status.json" ]
+    run jq -r '.outcome' "$STATUS_DIR/status.json"
+    assert_output "success"
+
+    run jq -r '.pr_url' "$STATUS_DIR/status.json"
+    refute_output "null"
+}
+EOF
+```
+
+- [ ] **Step 3: Run the integration test**
+
+```bash
+cd ~/claude-pal
+export PAL_TEST_REPO="yourname/claude-pal-smoketest"
+export PAL_TEST_ISSUE="1"
+export CLAUDE_CODE_OAUTH_TOKEN="$(cat ~/.config/claude-dispatch/oauth.env 2>/dev/null || echo)"
+export GH_TOKEN="$(cat ~/.config/gh-tokens/dispatch-cli-token 2>/dev/null || echo)"
+./tests/bats/bin/bats tests/test_container_pipeline.bats
+```
+
+Expected: test completes (may take 5–15 minutes depending on the trivial fix). A PR appears in the test repo. Status.json shows `"outcome": "success"` and non-null `pr_url`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd ~/claude-pal
+git add tests/test_container_pipeline.bats
+git commit -m "test(container): end-to-end pipeline integration test"
+```
+
+**Milestone:** `docker run` against a test repo round-trips an issue+plan to an opened PR via the full gated pipeline. Phase 2 complete.
+
+---
+
+## Phase 3: `/pal-implement` skill (sync mode)
+
+### Task 3.1: Skill directory structure and config loader
+
+**Files:**
+- Create: `~/claude-pal/skills/pal-implement/SKILL.md`
+- Create: `~/claude-pal/skills/lib/config.sh`
+
+- [ ] **Step 1: Write the config loader**
+
+```bash
+mkdir -p ~/claude-pal/skills/lib ~/claude-pal/skills/pal-implement
+
+cat > ~/claude-pal/skills/lib/config.sh <<'EOF'
+# skills/lib/config.sh
+# Resolve and load the claude-pal host config.
+# Returns config values via stdout or sets variables depending on caller.
+
+pal_config_path() {
+    local host_os
+    host_os=$(uname -s)
+    case "$host_os" in
+        Linux|Darwin)
+            echo "${XDG_CONFIG_HOME:-$HOME/.config}/claude-pal/config.env"
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            # Git Bash on Windows
+            local local_app
+            local_app=$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")
+            echo "$local_app/claude-pal/config.env"
+            ;;
+        *)
+            echo "${XDG_CONFIG_HOME:-$HOME/.config}/claude-pal/config.env"
+            ;;
+    esac
+}
+
+pal_load_config() {
+    local path
+    path=$(pal_config_path)
+    if [ ! -f "$path" ]; then
+        echo "pal: config file not found at $path" >&2
+        echo "pal: run 'pal-setup' or create the file manually — see docs/install.md" >&2
+        return 1
+    fi
+    # shellcheck source=/dev/null
+    . "$path"
+}
+
+pal_config_permissions_ok() {
+    local path
+    path=$(pal_config_path)
+    local host_os
+    host_os=$(uname -s)
+    case "$host_os" in
+        Linux|Darwin)
+            local perms
+            perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%A' "$path" 2>/dev/null)
+            if [ "$perms" != "600" ]; then
+                echo "pal: config file $path has permissions $perms, expected 600" >&2
+                echo "pal: run 'chmod 600 \"$path\"' and retry" >&2
+                return 1
+            fi
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            # Windows: check NTFS ACL via icacls; simplified presence check for v1
+            # Full ACL validation is in Task 7.4
+            ;;
+    esac
+}
+EOF
+```
+
+- [ ] **Step 2: shellcheck**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/config.sh
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd ~/claude-pal
+git add skills/lib/config.sh skills/pal-implement/
+git commit -m "feat(skills): config loader with platform-aware path resolution"
+```
+
+### Task 3.2: Preflight check helpers
+
+**Files:**
+- Create: `~/claude-pal/skills/lib/preflight.sh`
+
+- [ ] **Step 1: Write preflight checks**
+
+```bash
+cat > ~/claude-pal/skills/lib/preflight.sh <<'EOF'
+# skills/lib/preflight.sh
+# Preflight checks run before every dispatch.
+
+pal_preflight_no_api_key_in_env() {
+    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+        echo "pal: ERROR — ANTHROPIC_API_KEY is set in your environment." >&2
+        echo "pal: This would silently override your CLAUDE_CODE_OAUTH_TOKEN and bill a Console account." >&2
+        echo "pal: Unset it with: unset ANTHROPIC_API_KEY" >&2
+        return 1
+    fi
+}
+
+pal_preflight_single_auth_method() {
+    local has_oauth=0 has_api=0
+    [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && has_oauth=1
+    [ -n "${ANTHROPIC_API_KEY:-}" ] && has_api=1
+    local count=$((has_oauth + has_api))
+    if [ "$count" -eq 0 ]; then
+        echo "pal: ERROR — neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set in config.env" >&2
+        return 1
+    fi
+    if [ "$count" -gt 1 ]; then
+        echo "pal: ERROR — both CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY are in config.env" >&2
+        echo "pal: Set exactly one. See docs/authentication.md." >&2
+        return 1
+    fi
+}
+
+pal_preflight_docker_reachable() {
+    if ! docker info > /dev/null 2>&1; then
+        local target="${DOCKER_HOST:-local}"
+        echo "pal: ERROR — docker daemon not reachable (DOCKER_HOST=$target)" >&2
+        return 1
+    fi
+}
+
+pal_preflight_windows_bash() {
+    local host_os
+    host_os=$(uname -s)
+    case "$host_os" in
+        MINGW*|MSYS*|CYGWIN*)
+            local bash_version
+            bash_version=$(bash --version | head -1)
+            if echo "$bash_version" | grep -qi wsl; then
+                echo "pal: ERROR — Claude Code is using WSL's bash, not Git Bash" >&2
+                echo "pal: Set CLAUDE_CODE_GIT_BASH_PATH in your Claude Code settings.json:" >&2
+                echo "pal:   {\"env\": {\"CLAUDE_CODE_GIT_BASH_PATH\": \"C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe\"}}" >&2
+                return 1
+            fi
+            ;;
+    esac
+}
+
+pal_preflight_gh_auth() {
+    if [ -z "${GH_TOKEN:-}" ]; then
+        echo "pal: ERROR — GH_TOKEN not set in config.env" >&2
+        return 1
+    fi
+    if ! GH_TOKEN="$GH_TOKEN" gh auth status > /dev/null 2>&1; then
+        echo "pal: WARN — gh auth status failed with configured token" >&2
+        # Non-fatal: some PATs return 200 but fail auth status; let the container try
+    fi
+}
+
+pal_preflight_issue_not_in_flight() {
+    local repo="$1"
+    local number="$2"
+    local lock
+    lock="$(pal_runs_dir)/.lock-${repo//\//_}-${number}"
+    if [ -f "$lock" ]; then
+        local existing_run
+        existing_run=$(cat "$lock")
+        echo "pal: ERROR — another run is already in flight for $repo#$number (run $existing_run)" >&2
+        echo "pal: Use '/pal-status $existing_run' to check its state, or '/pal-cancel $existing_run' to kill it" >&2
+        return 1
+    fi
+}
+
+pal_preflight_all() {
+    local repo="${1:-}"
+    local number="${2:-}"
+
+    pal_preflight_no_api_key_in_env &&
+    pal_load_config &&
+    pal_config_permissions_ok &&
+    pal_preflight_single_auth_method &&
+    pal_preflight_docker_reachable &&
+    pal_preflight_windows_bash &&
+    pal_preflight_gh_auth || return 1
+
+    if [ -n "$repo" ] && [ -n "$number" ]; then
+        pal_preflight_issue_not_in_flight "$repo" "$number" || return 1
+    fi
+}
+EOF
+```
+
+- [ ] **Step 2: shellcheck**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/preflight.sh
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd ~/claude-pal
+git add skills/lib/preflight.sh
+git commit -m "feat(skills): preflight check helpers (auth, docker, windows-bash, gh, lock)"
+```
+
+### Task 3.3: Run registry helper
+
+**Files:**
+- Create: `~/claude-pal/skills/lib/runs.sh`
+
+- [ ] **Step 1: Write runs.sh**
+
+```bash
+cat > ~/claude-pal/skills/lib/runs.sh <<'EOF'
+# skills/lib/runs.sh
+# Run registry: directory layout, run id generation, reconciliation.
+
+pal_runs_dir() {
+    local host_os
+    host_os=$(uname -s)
+    case "$host_os" in
+        Linux|Darwin)
+            echo "${XDG_DATA_HOME:-$HOME/.local/share}/claude-pal/runs"
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            local local_app
+            local_app=$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")
+            echo "$local_app/claude-pal/runs"
+            ;;
+    esac
+}
+
+pal_new_run_id() {
+    printf '%s-%s' "$(date +%Y-%m-%d-%H%M)" "$(head /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c 6)"
+}
+
+pal_run_dir() {
+    local run_id="$1"
+    echo "$(pal_runs_dir)/$run_id"
+}
+
+pal_write_launch_meta() {
+    local run_id="$1"
+    local repo="$2"
+    local number="$3"
+    local event_type="$4"
+    local mode="$5"
+    local run_dir
+    run_dir=$(pal_run_dir "$run_id")
+    mkdir -p "$run_dir"
+    cat > "$run_dir/launch_meta.json" <<EOF_META
+{
+  "run_id": "$run_id",
+  "event_type": "$event_type",
+  "repo": "$repo",
+  "issue_number": $([ "$event_type" = "implement" ] && echo "$number" || echo "null"),
+  "pr_number": $([ "$event_type" = "revise" ] && echo "$number" || echo "null"),
+  "mode": "$mode",
+  "started_at": "$(date -u +%FT%TZ)",
+  "host_os": "$(uname -s)",
+  "backend": "${PAL_BACKEND:-docker-linux}",
+  "docker_host": $([ -n "${DOCKER_HOST:-}" ] && printf '"%s"' "$DOCKER_HOST" || echo null),
+  "image_tag": "${PAL_IMAGE_TAG:-claude-pal:latest}"
+}
+EOF_META
+}
+
+pal_acquire_lock() {
+    local run_id="$1"
+    local repo="$2"
+    local number="$3"
+    local lock
+    lock="$(pal_runs_dir)/.lock-${repo//\//_}-${number}"
+    echo "$run_id" > "$lock"
+}
+
+pal_release_lock() {
+    local repo="$1"
+    local number="$2"
+    local lock
+    lock="$(pal_runs_dir)/.lock-${repo//\//_}-${number}"
+    rm -f "$lock"
+}
+EOF
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/runs.sh
+cd ~/claude-pal
+git add skills/lib/runs.sh
+git commit -m "feat(skills): run registry helpers (dir layout, run ids, lock files)"
+```
+
+### Task 3.4: Docker launcher (sync mode)
+
+**Files:**
+- Create: `~/claude-pal/skills/lib/launcher.sh`
+
+- [ ] **Step 1: Write launcher.sh**
+
+```bash
+cat > ~/claude-pal/skills/lib/launcher.sh <<'EOF'
+# skills/lib/launcher.sh
+# Backend adapter: launches the container via docker run.
+
+pal_launch_sync() {
+    local run_id="$1"
+    local repo="$2"
+    local number="$3"
+    local event_type="$4"   # implement or revise
+
+    local run_dir
+    run_dir=$(pal_run_dir "$run_id")
+    local image_tag="${PAL_IMAGE_TAG:-claude-pal:latest}"
+
+    # Per-repo config (if present in current working directory's .pal/)
+    local per_repo_config=".pal/config.env"
+    local per_repo_args=()
+    if [ -f "$per_repo_config" ]; then
+        # Source, then translate each PAL_-namespaced or AGENT_-namespaced variable into -e args
+        # (we read, then use `env` to pass through)
+        local per_repo_env
+        per_repo_env=$(grep -E '^(AGENT_|PAL_|DOCKER_HOST=)' "$per_repo_config" | grep -v '^#' || true)
+        while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            per_repo_args+=(-e "$line")
+        done <<< "$per_repo_env"
+    fi
+
+    local docker_args=(
+        run --rm
+        --cap-add=NET_ADMIN
+        -e CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+        -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+        -e GH_TOKEN="$GH_TOKEN"
+        -v "$run_dir:/status"
+    )
+    docker_args+=("${per_repo_args[@]}")
+    docker_args+=("$image_tag" "$event_type" "$repo" "$number")
+
+    pal_acquire_lock "$run_id" "$repo" "$number"
+
+    # Sync mode: run in foreground, tee to log
+    local exit_code=0
+    docker "${docker_args[@]}" 2>&1 | tee "$run_dir/log" || exit_code=$?
+
+    pal_release_lock "$repo" "$number"
+    return $exit_code
+}
+
+pal_render_status_summary() {
+    local run_id="$1"
+    local run_dir
+    run_dir=$(pal_run_dir "$run_id")
+    local status_file="$run_dir/status.json"
+
+    if [ ! -f "$status_file" ]; then
+        echo "pal: no status.json found at $status_file" >&2
+        return 1
+    fi
+
+    local outcome phase pr_url failure_reason
+    outcome=$(jq -r .outcome "$status_file")
+    phase=$(jq -r .phase "$status_file")
+    pr_url=$(jq -r .pr_url "$status_file")
+    failure_reason=$(jq -r .failure_reason "$status_file")
+
+    case "$outcome" in
+        success)
+            printf '✓ claude-pal run %s: success\n' "$run_id"
+            printf '  PR opened: %s\n' "$pr_url"
+            ;;
+        clarification_needed)
+            printf '? claude-pal run %s: clarification needed\n' "$run_id"
+            printf '  Respond on the issue, then re-run /pal-implement\n'
+            ;;
+        review_concerns_unresolved)
+            printf '⚠ claude-pal run %s: post-impl review concerns unresolved\n' "$run_id"
+            printf '  Review the branch manually. Concerns:\n'
+            jq -r '.review_concerns_unresolved[]' "$status_file" | sed 's/^/    - /'
+            ;;
+        failure)
+            printf '✗ claude-pal run %s: failed at phase %s\n' "$run_id" "$phase"
+            printf '  Reason: %s\n' "$failure_reason"
+            printf '  Log: %s/log\n' "$run_dir"
+            ;;
+        cancelled)
+            printf '✗ claude-pal run %s: cancelled\n' "$run_id"
+            ;;
+        *)
+            printf '? claude-pal run %s: unknown outcome "%s"\n' "$run_id" "$outcome"
+            ;;
+    esac
+}
+EOF
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/launcher.sh
+cd ~/claude-pal
+git add skills/lib/launcher.sh
+git commit -m "feat(skills): docker sync launcher and status pretty-printer"
+```
+
+### Task 3.5: `/pal-implement` skill markdown
+
+**Files:**
+- Create: `~/claude-pal/skills/pal-implement/SKILL.md`
+
+- [ ] **Step 1: Write SKILL.md**
+
+```markdown
+---
+name: pal-implement
+description: Launch an ephemeral Docker container that executes the posted plan on a GitHub issue. Runs a gated pipeline (adversarial plan review → TDD implementation → post-impl review → PR open). Sync by default; pass --async to background.
+---
+
+# pal-implement
+
+Launch a claude-pal container to implement a GitHub issue's posted plan.
+
+## Usage
+
+```
+/pal-implement <issue#> [--async]
+```
+
+## Steps
+
+1. Parse arguments. Require exactly one positional argument (issue number); `--async` flag is optional.
+2. Source the shared libs:
+   ```bash
+   . "$(dirname "$(claude-skill-path pal-implement)")/../lib/config.sh"
+   . "$(dirname "$(claude-skill-path pal-implement)")/../lib/preflight.sh"
+   . "$(dirname "$(claude-skill-path pal-implement)")/../lib/runs.sh"
+   . "$(dirname "$(claude-skill-path pal-implement)")/../lib/launcher.sh"
+   ```
+3. Determine the target repo. If the current working directory is inside a git repo, use its origin remote. Otherwise require `PAL_REPO` env var.
+4. Run `pal_preflight_all "$repo" "$issue_num"`. On failure, exit with the preflight's own error.
+5. Generate a run id: `run_id=$(pal_new_run_id)`.
+6. Write launch meta: `pal_write_launch_meta "$run_id" "$repo" "$issue_num" "implement" "sync"`.
+7. Launch: `pal_launch_sync "$run_id" "$repo" "$issue_num" "implement"`. Exit code propagates.
+8. After container exits, call `pal_render_status_summary "$run_id"`.
+
+If `--async` flag is given, instead of steps 6-8 use the async path (implemented in Phase 5).
+
+## Examples
+
+- `/pal-implement 42` — launches container synchronously, blocks until done.
+- `/pal-implement 42 --async` — launches container in background (requires Phase 5).
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add skills/pal-implement/SKILL.md
+git commit -m "feat(skills): pal-implement SKILL.md (sync mode)"
+```
+
+### Task 3.6: Skill smoke test
+
+**Files:**
+- Create: `~/claude-pal/tests/test_skill_pal_implement.bats`
+
+- [ ] **Step 1: Write the test (mocks docker)**
+
+```bash
+cat > ~/claude-pal/tests/test_skill_pal_implement.bats <<'EOF'
+#!/usr/bin/env bats
+load 'test_helper/bats-support/load'
+load 'test_helper/bats-assert/load'
+
+setup() {
+    REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
+    TMPHOME="$(mktemp -d)"
+    export HOME="$TMPHOME"
+    export XDG_CONFIG_HOME="$TMPHOME/.config"
+    export XDG_DATA_HOME="$TMPHOME/.local/share"
+
+    mkdir -p "$XDG_CONFIG_HOME/claude-pal"
+    cat > "$XDG_CONFIG_HOME/claude-pal/config.env" <<'CONFIG'
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fake
+GH_TOKEN=github_pat_fake
+CONFIG
+    chmod 600 "$XDG_CONFIG_HOME/claude-pal/config.env"
+
+    # Mock docker with a script that writes a fake status.json
+    export PATH="$TMPHOME/bin:$PATH"
+    mkdir -p "$TMPHOME/bin"
+    cat > "$TMPHOME/bin/docker" <<'DOCKER_MOCK'
+#!/bin/bash
+case "$1" in
+    info) exit 0 ;;
+    run)
+        # Find the -v bind mount for status
+        status_dir=$(echo "$@" | grep -oE '/tmp[^:]+:/status' | cut -d: -f1 | head -1)
+        [ -z "$status_dir" ] && status_dir=$(echo "$@" | grep -oE '[^ ]+/claude-pal/runs/[^:]+:/status' | cut -d: -f1 | head -1)
+        if [ -n "$status_dir" ] && [ -d "$status_dir" ]; then
+            cat > "$status_dir/status.json" <<EOF_STATUS
+{"outcome":"success","phase":"complete","pr_url":"https://github.com/x/y/pull/99","pr_number":99,"failure_reason":null}
+EOF_STATUS
+        fi
+        exit 0
+        ;;
+    *) exit 1 ;;
+esac
+DOCKER_MOCK
+    chmod +x "$TMPHOME/bin/docker"
+}
+
+teardown() {
+    rm -rf "$TMPHOME"
+}
+
+@test "pal-implement happy path with mocked docker" {
+    source "$REPO_ROOT/skills/lib/config.sh"
+    source "$REPO_ROOT/skills/lib/preflight.sh"
+    source "$REPO_ROOT/skills/lib/runs.sh"
+    source "$REPO_ROOT/skills/lib/launcher.sh"
+
+    # Stub pal_preflight_gh_auth to skip network call
+    pal_preflight_gh_auth() { :; }
+
+    run bash -c "
+        source '$REPO_ROOT/skills/lib/config.sh'
+        source '$REPO_ROOT/skills/lib/preflight.sh'
+        source '$REPO_ROOT/skills/lib/runs.sh'
+        source '$REPO_ROOT/skills/lib/launcher.sh'
+        pal_preflight_gh_auth() { :; }
+        pal_preflight_all 'owner/repo' 42
+        run_id=\$(pal_new_run_id)
+        pal_write_launch_meta \"\$run_id\" owner/repo 42 implement sync
+        pal_launch_sync \"\$run_id\" owner/repo 42 implement > /dev/null
+        pal_render_status_summary \"\$run_id\"
+    "
+    assert_success
+    assert_output --partial "success"
+    assert_output --partial "https://github.com/x/y/pull/99"
+}
+EOF
+```
+
+- [ ] **Step 2: Run the test**
+
+```bash
+cd ~/claude-pal
+./tests/bats/bin/bats tests/test_skill_pal_implement.bats
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd ~/claude-pal
+git add tests/test_skill_pal_implement.bats
+git commit -m "test(skills): pal-implement happy path smoke test with mocked docker"
+```
+
+**Milestone:** `/pal-implement <issue#>` works end-to-end against a real test repo (documented in Phase 2 Task 2.10) in sync mode.
+
+---
+
+## Phase 4: `/pal-plan` skill
+
+### Task 4.1: Plan file locator
+
+**Files:**
+- Create: `~/claude-pal/skills/lib/plan-locator.sh`
+
+- [ ] **Step 1: Write plan-locator.sh**
+
+```bash
+cat > ~/claude-pal/skills/lib/plan-locator.sh <<'EOF'
+# skills/lib/plan-locator.sh
+# Locate the implementation plan file to publish.
+
+pal_find_plan_file() {
+    local explicit_file="${1:-}"
+    if [ -n "$explicit_file" ]; then
+        if [ ! -f "$explicit_file" ]; then
+            echo "pal: plan file not found: $explicit_file" >&2
+            return 1
+        fi
+        echo "$explicit_file"
+        return 0
+    fi
+
+    # Auto-detect: most recent file in docs/superpowers/plans/
+    local default_dir="docs/superpowers/plans"
+    if [ -d "$default_dir" ]; then
+        local latest
+        latest=$(ls -t "$default_dir"/*.md 2>/dev/null | head -1 || true)
+        if [ -n "$latest" ]; then
+            echo "$latest"
+            return 0
+        fi
+    fi
+
+    echo "pal: could not auto-detect a plan file" >&2
+    echo "pal: checked: $default_dir" >&2
+    echo "pal: provide a path explicitly via: /pal-plan [issue#] --file <path>" >&2
+    return 1
+}
+EOF
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/plan-locator.sh
+cd ~/claude-pal
+git add skills/lib/plan-locator.sh
+git commit -m "feat(skills): plan-locator for auto-detecting plan files"
+```
+
+### Task 4.2: Plan publisher
+
+**Files:**
+- Create: `~/claude-pal/skills/lib/publisher.sh`
+
+- [ ] **Step 1: Write publisher.sh**
+
+```bash
+cat > ~/claude-pal/skills/lib/publisher.sh <<'EOF'
+# skills/lib/publisher.sh
+# Publish a plan file as an issue comment (with <!-- agent-plan --> marker).
+
+pal_publish_plan() {
+    local plan_file="$1"
+    local repo="$2"
+    local issue="${3:-}"
+
+    local plan_content
+    plan_content=$(cat "$plan_file")
+    local comment_body=$'<!-- agent-plan -->\n'"$plan_content"
+
+    if [ -z "$issue" ]; then
+        # Derive title from first H1 in the plan file
+        local title
+        title=$(awk '/^# /{sub(/^# /,""); print; exit}' "$plan_file")
+        if [ -z "$title" ]; then
+            title="claude-pal implementation plan ($(date -I))"
+        fi
+
+        local problem_summary="<!-- agent-plan -->
+$plan_content"
+
+        local new_issue_url
+        new_issue_url=$(GH_TOKEN="$GH_TOKEN" gh issue create \
+            --repo "$repo" \
+            --title "$title" \
+            --body "$problem_summary" \
+            2>&1 | tail -1) || {
+                echo "pal: failed to create issue" >&2
+                return 1
+            }
+        issue=$(echo "$new_issue_url" | grep -Eo '/issues/[0-9]+' | grep -Eo '[0-9]+')
+        echo "Created new issue: $new_issue_url"
+    else
+        local comment_url
+        comment_url=$(GH_TOKEN="$GH_TOKEN" gh issue comment "$issue" \
+            --repo "$repo" \
+            --body "$comment_body" 2>&1 | tail -1) || {
+                echo "pal: failed to post comment on issue $issue" >&2
+                return 1
+            }
+        echo "Posted plan comment: $comment_url"
+    fi
+
+    echo ""
+    echo "Next step:"
+    echo "  /pal-implement $issue"
+}
+EOF
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/publisher.sh
+cd ~/claude-pal
+git add skills/lib/publisher.sh
+git commit -m "feat(skills): plan publisher (new issue or comment on existing)"
+```
+
+### Task 4.3: `/pal-plan` skill markdown
+
+**Files:**
+- Create: `~/claude-pal/skills/pal-plan/SKILL.md`
+
+- [ ] **Step 1: Write SKILL.md**
+
+```bash
+mkdir -p ~/claude-pal/skills/pal-plan
+cat > ~/claude-pal/skills/pal-plan/SKILL.md <<'EOF'
+---
+name: pal-plan
+description: Publish an implementation plan from the current conversation to a GitHub issue. Takes the most recent plan file in docs/superpowers/plans/ (or an explicit --file path) and posts it as a comment with <!-- agent-plan --> marker. Creates a new issue if no issue number given. Does NOT launch a container — provides a checkpoint to review the posted plan on GitHub before running /pal-implement.
+---
+
+# pal-plan
+
+Publish a plan to GitHub for later dispatch.
+
+## Usage
+
+```
+/pal-plan [issue#] [--file <path>]
+```
+
+## Steps
+
+1. Parse arguments: zero or one positional issue number; optional `--file <path>`.
+2. Source shared libs:
+   ```bash
+   . "$(dirname "$(claude-skill-path pal-plan)")/../lib/config.sh"
+   . "$(dirname "$(claude-skill-path pal-plan)")/../lib/plan-locator.sh"
+   . "$(dirname "$(claude-skill-path pal-plan)")/../lib/publisher.sh"
+   ```
+3. Load config: `pal_load_config`.
+4. Locate the plan file: `plan_file=$(pal_find_plan_file "$file_arg")`. On failure, exit with the locator's error.
+5. Determine target repo from cwd's git origin, or require `PAL_REPO` env var.
+6. Publish: `pal_publish_plan "$plan_file" "$repo" "$issue_arg"`.
+7. The publisher prints the issue URL and a "Next step: /pal-implement <issue#>" hint.
+
+## Examples
+
+- `/pal-plan` — auto-detect latest plan, create a new issue with it
+- `/pal-plan 42` — auto-detect latest plan, post as comment on issue #42
+- `/pal-plan 42 --file docs/superpowers/plans/2026-04-18-feature.md` — post a specific plan on issue #42
+EOF
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add skills/pal-plan/SKILL.md
+git commit -m "feat(skills): pal-plan SKILL.md"
+```
+
+### Task 4.4: `/pal-plan` smoke test
+
+**Files:**
+- Create: `~/claude-pal/tests/test_skill_pal_plan.bats`
+
+- [ ] **Step 1: Write the test (mocks gh CLI)**
+
+```bash
+cat > ~/claude-pal/tests/test_skill_pal_plan.bats <<'EOF'
+#!/usr/bin/env bats
+load 'test_helper/bats-support/load'
+load 'test_helper/bats-assert/load'
+
+setup() {
+    REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
+    TMPHOME="$(mktemp -d)"
+    export HOME="$TMPHOME"
+    export XDG_CONFIG_HOME="$TMPHOME/.config"
+    export GH_TOKEN="fake"
+    mkdir -p "$XDG_CONFIG_HOME/claude-pal"
+    cat > "$XDG_CONFIG_HOME/claude-pal/config.env" <<CONFIG
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fake
+GH_TOKEN=github_pat_fake
+CONFIG
+    chmod 600 "$XDG_CONFIG_HOME/claude-pal/config.env"
+
+    # Fake project with a plan file
+    WORKDIR="$(mktemp -d)"
+    mkdir -p "$WORKDIR/docs/superpowers/plans"
+    cat > "$WORKDIR/docs/superpowers/plans/2026-04-18-feature.md" <<PLAN
+# Test Plan
+This is a test plan.
+PLAN
+
+    # Mock gh
+    export PATH="$TMPHOME/bin:$PATH"
+    mkdir -p "$TMPHOME/bin"
+    cat > "$TMPHOME/bin/gh" <<'GH_MOCK'
+#!/bin/bash
+case "$1 $2" in
+    "issue create")
+        echo "https://github.com/owner/repo/issues/123"
+        exit 0
+        ;;
+    "issue comment")
+        echo "https://github.com/owner/repo/issues/42#issuecomment-99"
+        exit 0
+        ;;
+esac
+exit 1
+GH_MOCK
+    chmod +x "$TMPHOME/bin/gh"
+}
+
+teardown() {
+    rm -rf "$TMPHOME" "$WORKDIR"
+}
+
+@test "pal-plan with existing issue posts a comment" {
+    cd "$WORKDIR"
+    source "$REPO_ROOT/skills/lib/config.sh"
+    source "$REPO_ROOT/skills/lib/plan-locator.sh"
+    source "$REPO_ROOT/skills/lib/publisher.sh"
+    pal_load_config
+    plan=$(pal_find_plan_file)
+
+    run pal_publish_plan "$plan" owner/repo 42
+    assert_success
+    assert_output --partial "Posted plan comment"
+    assert_output --partial "/pal-implement 42"
+}
+
+@test "pal-plan without issue creates a new one" {
+    cd "$WORKDIR"
+    source "$REPO_ROOT/skills/lib/config.sh"
+    source "$REPO_ROOT/skills/lib/plan-locator.sh"
+    source "$REPO_ROOT/skills/lib/publisher.sh"
+    pal_load_config
+    plan=$(pal_find_plan_file)
+
+    run pal_publish_plan "$plan" owner/repo ""
+    assert_success
+    assert_output --partial "Created new issue"
+    assert_output --partial "/pal-implement 123"
+}
+EOF
+```
+
+- [ ] **Step 2: Run the tests**
+
+```bash
+cd ~/claude-pal
+./tests/bats/bin/bats tests/test_skill_pal_plan.bats
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd ~/claude-pal
+git add tests/test_skill_pal_plan.bats
+git commit -m "test(skills): pal-plan coverage for new-issue and existing-issue flows"
+```
+
+**Milestone:** `/pal-plan` and `/pal-implement` together support the core flow: brainstorm → plan file → publish → dispatch.
+
+---
+
+## Phase 5: Async mode, run registry management, and support skills
+
+### Task 5.1: Cross-platform notifier
+
+**Files:**
+- Create: `~/claude-pal/skills/lib/notify.sh`
+
+- [ ] **Step 1: Write notify.sh**
+
+```bash
+cat > ~/claude-pal/skills/lib/notify.sh <<'EOF'
+# skills/lib/notify.sh
+# Cross-platform desktop notifier.
+
+pal_notify() {
+    local title="${1:-claude-pal}"
+    local message="$2"
+
+    # Honor override
+    if [ -n "${PAL_NOTIFY_COMMAND_OVERRIDE:-}" ]; then
+        "$PAL_NOTIFY_COMMAND_OVERRIDE" "$title" "$message" && return 0
+    fi
+
+    # Respect disable flag
+    if [ "${PAL_NOTIFY:-true}" != "true" ]; then
+        return 0
+    fi
+
+    local host_os
+    host_os=$(uname -s)
+    case "$host_os" in
+        Linux)
+            if command -v notify-send > /dev/null 2>&1; then
+                notify-send "$title" "$message" || true
+            fi
+            ;;
+        Darwin)
+            osascript -e "display notification \"$(printf '%s' "$message" | sed 's/"/\\"/g')\" with title \"$title\"" 2>/dev/null || true
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            if command -v powershell.exe > /dev/null 2>&1; then
+                powershell.exe -NoProfile -Command "
+                    try {
+                        Import-Module BurntToast -ErrorAction Stop
+                        New-BurntToastNotification -Text '$title', '$(printf '%s' "$message" | sed "s/'/''/g")'
+                    } catch {
+                        Write-Host 'pal-notify: BurntToast module not installed (Install-Module BurntToast)'
+                    }
+                " 2>/dev/null || true
+            fi
+            ;;
+    esac
+}
+EOF
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/notify.sh
+cd ~/claude-pal
+git add skills/lib/notify.sh
+git commit -m "feat(skills): cross-platform desktop notifier (Linux/macOS/Windows)"
+```
+
+### Task 5.2: Async launcher with watcher
+
+**Files:**
+- Modify: `~/claude-pal/skills/lib/launcher.sh`
+
+- [ ] **Step 1: Add async launch function to launcher.sh**
+
+Append to `skills/lib/launcher.sh`:
+
+```bash
+
+pal_launch_async() {
+    local run_id="$1"
+    local repo="$2"
+    local number="$3"
+    local event_type="$4"
+
+    local run_dir
+    run_dir=$(pal_run_dir "$run_id")
+    local image_tag="${PAL_IMAGE_TAG:-claude-pal:latest}"
+
+    local per_repo_config=".pal/config.env"
+    local per_repo_args=()
+    if [ -f "$per_repo_config" ]; then
+        local per_repo_env
+        per_repo_env=$(grep -E '^(AGENT_|PAL_|DOCKER_HOST=)' "$per_repo_config" | grep -v '^#' || true)
+        while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            per_repo_args+=(-e "$line")
+        done <<< "$per_repo_env"
+    fi
+
+    local docker_args=(
+        run --rm --detach
+        --cap-add=NET_ADMIN
+        -e CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+        -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+        -e GH_TOKEN="$GH_TOKEN"
+        -v "$run_dir:/status"
+    )
+    docker_args+=("${per_repo_args[@]}")
+    docker_args+=("$image_tag" "$event_type" "$repo" "$number")
+
+    pal_acquire_lock "$run_id" "$repo" "$number"
+
+    local cid
+    cid=$(docker "${docker_args[@]}")
+    echo "$cid" > "$run_dir/container_id"
+
+    # Fork watcher: wait for container exit, then notify
+    (
+        source "$(dirname "${BASH_SOURCE[0]}")/notify.sh"
+        source "$(dirname "${BASH_SOURCE[0]}")/runs.sh"
+        docker wait "$cid" > /dev/null 2>&1 || true
+        # Harvest final logs (best-effort)
+        docker logs "$cid" > "$run_dir/log" 2>&1 || true
+        # Release lock
+        pal_release_lock "$repo" "$number"
+        # Read status and notify
+        if [ -f "$run_dir/status.json" ]; then
+            local outcome pr_url
+            outcome=$(jq -r .outcome "$run_dir/status.json" 2>/dev/null)
+            pr_url=$(jq -r .pr_url "$run_dir/status.json" 2>/dev/null)
+            case "$outcome" in
+                success)
+                    pal_notify "claude-pal: $run_id complete" "PR: $pr_url"
+                    ;;
+                *)
+                    pal_notify "claude-pal: $run_id $outcome" "Check /pal-status $run_id"
+                    ;;
+            esac
+        else
+            pal_notify "claude-pal: $run_id exited" "No status.json — check /pal-logs $run_id"
+        fi
+    ) &
+
+    echo "Run $run_id launched (async, container $cid)"
+    echo "  Status: /pal-status $run_id"
+    echo "  Logs:   /pal-logs $run_id --follow"
+}
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/launcher.sh
+cd ~/claude-pal
+git add skills/lib/launcher.sh
+git commit -m "feat(skills): async launcher with forked watcher and notification"
+```
+
+### Task 5.3: Wire --async into `/pal-implement`
+
+**Files:**
+- Modify: `~/claude-pal/skills/pal-implement/SKILL.md`
+
+- [ ] **Step 1: Update SKILL.md to handle --async**
+
+Update the "Steps" section to:
+
+```markdown
+7. If `--async` flag given:
+   - `pal_launch_async "$run_id" "$repo" "$issue_num" "implement"`
+   - Return immediately; skip status summary step.
+   Otherwise:
+   - `pal_launch_sync "$run_id" "$repo" "$issue_num" "implement"` (exit code propagates)
+   - `pal_render_status_summary "$run_id"`
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add skills/pal-implement/SKILL.md
+git commit -m "feat(skills): pal-implement now supports --async"
+```
+
+### Task 5.4: `/pal-status` skill
+
+**Files:**
+- Create: `~/claude-pal/skills/pal-status/SKILL.md`
+- Create: `~/claude-pal/skills/lib/status-list.sh`
+
+- [ ] **Step 1: Write status-list.sh**
+
+```bash
+mkdir -p ~/claude-pal/skills/pal-status
+cat > ~/claude-pal/skills/lib/status-list.sh <<'EOF'
+# skills/lib/status-list.sh
+# List runs and reconcile against docker ps.
+
+pal_list_runs() {
+    local runs_dir
+    runs_dir=$(pal_runs_dir)
+    [ ! -d "$runs_dir" ] && { echo "No runs yet."; return 0; }
+
+    printf '%-32s %-10s %-32s %-10s\n' "RUN_ID" "STATE" "REPO#NUMBER" "OUTCOME"
+    printf '%-32s %-10s %-32s %-10s\n' "--------------------------------" "----------" "--------------------------------" "----------"
+
+    for rd in "$runs_dir"/*/; do
+        [ ! -d "$rd" ] && continue
+        local run_id
+        run_id=$(basename "$rd")
+        local meta="$rd/launch_meta.json"
+        local status="$rd/status.json"
+        local cid_file="$rd/container_id"
+
+        local repo number event_type started_at
+        if [ -f "$meta" ]; then
+            repo=$(jq -r .repo "$meta")
+            number=$(jq -r '.issue_number // .pr_number' "$meta")
+            event_type=$(jq -r .event_type "$meta")
+        else
+            repo="?"; number="?"; event_type="?"
+        fi
+
+        local state outcome
+        if [ -f "$status" ]; then
+            state="complete"
+            outcome=$(jq -r .outcome "$status")
+        elif [ -f "$cid_file" ]; then
+            local cid
+            cid=$(cat "$cid_file")
+            if docker ps --filter "id=$cid" --format '{{.ID}}' 2>/dev/null | grep -q .; then
+                state="running"
+                outcome="-"
+            else
+                # Container gone but no status.json — reconcile as stale
+                state="stale"
+                outcome="unknown"
+            fi
+        else
+            state="abandoned"
+            outcome="-"
+        fi
+
+        printf '%-32s %-10s %-32s %-10s\n' "$run_id" "$state" "${repo}#${number}" "$outcome"
+    done
+}
+
+pal_show_run() {
+    local run_id="$1"
+    local run_dir
+    run_dir=$(pal_run_dir "$run_id")
+    [ ! -d "$run_dir" ] && { echo "pal: no such run: $run_id" >&2; return 1; }
+
+    echo "=== Launch metadata ==="
+    [ -f "$run_dir/launch_meta.json" ] && jq . "$run_dir/launch_meta.json"
+    echo ""
+    echo "=== Status ==="
+    if [ -f "$run_dir/status.json" ]; then
+        jq . "$run_dir/status.json"
+    else
+        echo "(no status.json yet — run may be in flight)"
+    fi
+    echo ""
+    echo "Log: $run_dir/log"
+}
+
+pal_clean_runs() {
+    local runs_dir
+    runs_dir=$(pal_runs_dir)
+    [ ! -d "$runs_dir" ] && return 0
+
+    local cutoff_days="${1:-30}"
+    local removed=0
+    for rd in "$runs_dir"/*/; do
+        [ ! -d "$rd" ] && continue
+        if [ "$(find "$rd" -maxdepth 0 -mtime +"$cutoff_days" -print)" ]; then
+            rm -rf "$rd"
+            removed=$((removed+1))
+        fi
+    done
+    echo "Removed $removed runs older than $cutoff_days days."
+}
+EOF
+```
+
+- [ ] **Step 2: Write `/pal-status` SKILL.md**
+
+```bash
+cat > ~/claude-pal/skills/pal-status/SKILL.md <<'EOF'
+---
+name: pal-status
+description: List claude-pal runs or show details on a specific one. Reconciles stale status against docker ps.
+---
+
+# pal-status
+
+## Usage
+
+```
+/pal-status [run_id] [--clean [days]]
+```
+
+## Steps
+
+1. Source shared libs (config, runs, status-list).
+2. If `--clean` given: `pal_clean_runs "${days:-30}"`. Exit.
+3. If `run_id` given: `pal_show_run "$run_id"`.
+4. Otherwise: `pal_list_runs`.
+EOF
+```
+
+- [ ] **Step 3: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/status-list.sh
+cd ~/claude-pal
+git add skills/lib/status-list.sh skills/pal-status/SKILL.md
+git commit -m "feat(skills): pal-status for listing/detailing/cleaning runs"
+```
+
+### Task 5.5: `/pal-logs` skill
+
+**Files:**
+- Create: `~/claude-pal/skills/pal-logs/SKILL.md`
+
+- [ ] **Step 1: Write SKILL.md**
+
+```bash
+mkdir -p ~/claude-pal/skills/pal-logs
+cat > ~/claude-pal/skills/pal-logs/SKILL.md <<'EOF'
+---
+name: pal-logs
+description: Tail logs for a claude-pal run. Supports --follow to stream live output.
+---
+
+# pal-logs
+
+## Usage
+
+```
+/pal-logs <run_id> [--follow]
+```
+
+## Steps
+
+1. Source shared libs.
+2. Compute `log_file="$(pal_run_dir "$run_id")/log"`.
+3. If file does not exist, report error and exit 1.
+4. If `--follow` flag given: `tail -f "$log_file"`.
+5. Else: `cat "$log_file"`.
+EOF
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add skills/pal-logs/SKILL.md
+git commit -m "feat(skills): pal-logs skill"
+```
+
+### Task 5.6: `/pal-cancel` skill
+
+**Files:**
+- Create: `~/claude-pal/skills/pal-cancel/SKILL.md`
+- Modify: `~/claude-pal/skills/lib/launcher.sh`
+
+- [ ] **Step 1: Add pal_cancel to launcher.sh**
+
+Append to `skills/lib/launcher.sh`:
+
+```bash
+
+pal_cancel_run() {
+    local run_id="$1"
+    local run_dir
+    run_dir=$(pal_run_dir "$run_id")
+    local cid_file="$run_dir/container_id"
+
+    if [ ! -f "$cid_file" ]; then
+        echo "pal: no container_id recorded for run $run_id" >&2
+        return 1
+    fi
+
+    local cid
+    cid=$(cat "$cid_file")
+
+    if ! docker ps --filter "id=$cid" --format '{{.ID}}' 2>/dev/null | grep -q .; then
+        echo "pal: container $cid not running" >&2
+        return 1
+    fi
+
+    echo "pal: sending SIGTERM to $cid (grace 10s)"
+    docker stop --time 10 "$cid" > /dev/null || true
+
+    # Write a cancelled status
+    cat > "$run_dir/status.json" <<EOF_CANCEL
+{
+  "phase": "cancelled",
+  "outcome": "cancelled",
+  "failure_reason": "user_cancelled",
+  "pr_number": null,
+  "pr_url": null,
+  "commits": [],
+  "review_concerns_addressed": [],
+  "review_concerns_unresolved": []
+}
+EOF_CANCEL
+
+    # Release lock if meta exists
+    if [ -f "$run_dir/launch_meta.json" ]; then
+        local repo number
+        repo=$(jq -r .repo "$run_dir/launch_meta.json")
+        number=$(jq -r '.issue_number // .pr_number' "$run_dir/launch_meta.json")
+        pal_release_lock "$repo" "$number"
+    fi
+
+    echo "pal: run $run_id cancelled"
+}
+```
+
+- [ ] **Step 2: Write SKILL.md**
+
+```bash
+mkdir -p ~/claude-pal/skills/pal-cancel
+cat > ~/claude-pal/skills/pal-cancel/SKILL.md <<'EOF'
+---
+name: pal-cancel
+description: Cancel an in-flight claude-pal run. Sends SIGTERM (10s grace) then SIGKILL.
+---
+
+# pal-cancel
+
+## Usage
+
+```
+/pal-cancel <run_id>
+```
+
+## Steps
+
+1. Source shared libs.
+2. Call `pal_cancel_run "$run_id"`.
+EOF
+```
+
+- [ ] **Step 3: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/launcher.sh
+cd ~/claude-pal
+git add skills/pal-cancel/SKILL.md skills/lib/launcher.sh
+git commit -m "feat(skills): pal-cancel for killing in-flight runs"
+```
+
+**Milestone:** All run-lifecycle skills (`/pal-status`, `/pal-logs`, `/pal-cancel`) work; `/pal-implement --async` queues runs in the background with desktop notifications on completion.
+
+---
+
+## Phase 6: `/pal-revise` skill
+
+### Task 6.1: `/pal-revise` skill markdown
+
+**Files:**
+- Create: `~/claude-pal/skills/pal-revise/SKILL.md`
+
+- [ ] **Step 1: Write SKILL.md**
+
+```bash
+mkdir -p ~/claude-pal/skills/pal-revise
+cat > ~/claude-pal/skills/pal-revise/SKILL.md <<'EOF'
+---
+name: pal-revise
+description: Launch an ephemeral Docker container to address PR review feedback. Fetches PR branch and review comments, runs a focused implementation pass to address concerns, pushes new commits to the PR.
+---
+
+# pal-revise
+
+## Usage
+
+```
+/pal-revise <pr#> [--async]
+```
+
+## Steps
+
+1. Parse: exactly one positional PR number; optional `--async`.
+2. Source shared libs (same as pal-implement).
+3. Determine repo from cwd git origin or `PAL_REPO`.
+4. Run `pal_preflight_all "$repo" "$pr_num"`.
+5. Generate run id and write launch meta: `pal_write_launch_meta "$run_id" "$repo" "$pr_num" "revise" "$mode"`.
+6. Launch (sync or async based on flag): passes `revise` as the event_type to the container.
+7. Container:
+   - Fetches PR branch (via Task 2.3's `setup_worktree` revise path)
+   - Fetches PR review feedback (via Task 2.4's `fetch_pr_context`)
+   - Skips adversarial plan review
+   - Runs an implement pass with `AGENT_REVIEW_CONCERNS` set from review feedback
+   - Runs test gate + post-impl review
+   - Pushes new commits to the existing PR branch (no new PR)
+8. Sync mode prints status summary. Async mode fires desktop notification on completion.
+
+## Examples
+
+- `/pal-revise 317` — address feedback on PR #317 synchronously
+- `/pal-revise 317 --async` — same, in background
+EOF
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add skills/pal-revise/SKILL.md
+git commit -m "feat(skills): pal-revise SKILL.md"
+```
+
+### Task 6.2: End-to-end revise test
+
+**Files:**
+- Create: `~/claude-pal/tests/test_revise_smoke.bats`
+
+- [ ] **Step 1: Write the test**
+
+```bash
+cat > ~/claude-pal/tests/test_revise_smoke.bats <<'EOF'
+#!/usr/bin/env bats
+load 'test_helper/bats-support/load'
+load 'test_helper/bats-assert/load'
+
+# This test requires a real PR with review feedback. Skips if envs missing.
+
+setup() {
+    REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
+    : "${PAL_TEST_REPO:?set PAL_TEST_REPO}"
+    : "${PAL_TEST_PR_WITH_REVIEW:?set PAL_TEST_PR_WITH_REVIEW to a PR# with CHANGES_REQUESTED review}"
+    : "${CLAUDE_CODE_OAUTH_TOKEN:?}"
+    : "${GH_TOKEN:?}"
+    IMAGE_TAG="claude-pal:test-revise-$RANDOM"
+    STATUS_DIR="$(mktemp -d)"
+}
+
+teardown() {
+    [ -n "${IMAGE_TAG:-}" ] && docker rmi -f "$IMAGE_TAG" 2>/dev/null || true
+    [ -n "${STATUS_DIR:-}" ] && rm -rf "$STATUS_DIR"
+}
+
+@test "revise pipeline round-trips on smoketest PR" {
+    "$REPO_ROOT/scripts/build-image.sh" "$IMAGE_TAG" > /dev/null 2>&1
+
+    run docker run --rm \
+        --cap-add=NET_ADMIN \
+        -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN" \
+        -e GH_TOKEN="$GH_TOKEN" \
+        -v "$STATUS_DIR:/status" \
+        "$IMAGE_TAG" revise "$PAL_TEST_REPO" "$PAL_TEST_PR_WITH_REVIEW"
+    assert_success
+
+    run jq -r '.outcome' "$STATUS_DIR/status.json"
+    assert_output "success"
+}
+EOF
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add tests/test_revise_smoke.bats
+git commit -m "test(container): end-to-end revise pipeline test"
+```
+
+**Milestone:** `/pal-revise <pr#>` addresses review feedback and pushes new commits.
+
+---
+
+## Phase 7: Cross-platform hardening
+
+### Task 7.1: macOS Keychain loader
+
+**Files:**
+- Modify: `~/claude-pal/skills/lib/config.sh`
+
+- [ ] **Step 1: Add Keychain helpers**
+
+Append to `skills/lib/config.sh`:
+
+```bash
+
+pal_try_macos_keychain() {
+    [ "$(uname -s)" != "Darwin" ] && return 1
+
+    local oauth
+    oauth=$(security find-generic-password -a "$USER" -s claude-pal-oauth -w 2>/dev/null) || return 1
+    if [ -n "$oauth" ]; then
+        export CLAUDE_CODE_OAUTH_TOKEN="$oauth"
+        return 0
+    fi
+    return 1
+}
+```
+
+And in `pal_load_config`, before the final sourcing, try the Keychain first:
+
+```bash
+pal_load_config() {
+    # Try platform-specific keychain first (hardening)
+    if pal_try_macos_keychain 2>/dev/null; then
+        # Keychain provided the token; still source config.env for GH_TOKEN etc.
+        local path
+        path=$(pal_config_path)
+        if [ -f "$path" ]; then
+            # shellcheck source=/dev/null
+            . "$path"
+        fi
+        return 0
+    fi
+
+    # Fallback to file-only
+    local path
+    path=$(pal_config_path)
+    if [ ! -f "$path" ]; then
+        echo "pal: config file not found at $path" >&2
+        return 1
+    fi
+    # shellcheck source=/dev/null
+    . "$path"
+}
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/config.sh
+cd ~/claude-pal
+git add skills/lib/config.sh
+git commit -m "feat(skills): auto-detect macOS Keychain-stored OAuth token"
+```
+
+### Task 7.2: Windows Credential Manager loader
+
+**Files:**
+- Modify: `~/claude-pal/skills/lib/config.sh`
+
+- [ ] **Step 1: Add Windows Credential Manager helper**
+
+Append to `skills/lib/config.sh`:
+
+```bash
+
+pal_try_windows_credential_manager() {
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) ;;
+        *) return 1 ;;
+    esac
+
+    local oauth
+    oauth=$(powershell.exe -NoProfile -Command "
+        try {
+            \$cred = Get-StoredCredential -Target 'claude-pal-oauth' -ErrorAction Stop
+            [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR(\$cred.Password))
+        } catch { '' }
+    " 2>/dev/null | tr -d '\r\n') || return 1
+
+    if [ -n "$oauth" ]; then
+        export CLAUDE_CODE_OAUTH_TOKEN="$oauth"
+        return 0
+    fi
+    return 1
+}
+```
+
+Update `pal_load_config` to also try Windows Credential Manager before falling through to file:
+
+```bash
+pal_load_config() {
+    if pal_try_macos_keychain 2>/dev/null || pal_try_windows_credential_manager 2>/dev/null; then
+        local path
+        path=$(pal_config_path)
+        [ -f "$path" ] && . "$path"
+        return 0
+    fi
+
+    local path
+    path=$(pal_config_path)
+    if [ ! -f "$path" ]; then
+        echo "pal: config file not found at $path" >&2
+        return 1
+    fi
+    # shellcheck source=/dev/null
+    . "$path"
+}
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/config.sh
+cd ~/claude-pal
+git add skills/lib/config.sh
+git commit -m "feat(skills): auto-detect Windows Credential Manager OAuth token"
+```
+
+### Task 7.3: Linux `pass` opt-in integration
+
+**Files:**
+- Modify: `~/claude-pal/skills/lib/config.sh`
+
+- [ ] **Step 1: Add pass support via PAL_CRED_SOURCE env**
+
+Append to `skills/lib/config.sh`:
+
+```bash
+
+pal_try_pass_source() {
+    [ -z "${PAL_CRED_SOURCE:-}" ] && return 1
+    case "$PAL_CRED_SOURCE" in
+        pass:*)
+            local pass_path="${PAL_CRED_SOURCE#pass:}"
+            if ! command -v pass > /dev/null 2>&1; then
+                echo "pal: PAL_CRED_SOURCE uses pass but the 'pass' command is not installed" >&2
+                return 1
+            fi
+            local oauth
+            oauth=$(pass show "$pass_path" 2>/dev/null) || return 1
+            export CLAUDE_CODE_OAUTH_TOKEN="$oauth"
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+```
+
+Add this to `pal_load_config`'s try chain:
+
+```bash
+pal_load_config() {
+    if pal_try_macos_keychain 2>/dev/null || pal_try_windows_credential_manager 2>/dev/null || pal_try_pass_source 2>/dev/null; then
+        local path
+        path=$(pal_config_path)
+        [ -f "$path" ] && . "$path"
+        return 0
+    fi
+    # ... (rest unchanged)
+}
+```
+
+- [ ] **Step 2: shellcheck and commit**
+
+```bash
+shellcheck ~/claude-pal/skills/lib/config.sh
+cd ~/claude-pal
+git add skills/lib/config.sh
+git commit -m "feat(skills): opt-in 'pass' integration via PAL_CRED_SOURCE=pass:..."
+```
+
+### Task 7.4: Windows NTFS ACL check
+
+**Files:**
+- Modify: `~/claude-pal/skills/lib/config.sh`
+
+- [ ] **Step 1: Implement NTFS ACL validation in pal_config_permissions_ok**
+
+Replace the Windows branch in `pal_config_permissions_ok` with:
+
+```bash
+        MINGW*|MSYS*|CYGWIN*)
+            # Validate NTFS ACL: only current user should have access
+            local win_path
+            win_path=$(cygpath -w "$path")
+            local acl_output
+            acl_output=$(icacls.exe "$win_path" 2>/dev/null || true)
+            # Heuristic: expect lines for current user only, no "Everyone", "BUILTIN\Users" etc.
+            if echo "$acl_output" | grep -qiE '(Everyone|BUILTIN\\Users|BUILTIN\\Authenticated Users)'; then
+                echo "pal: config file $path has overly permissive ACL" >&2
+                echo "pal: run: icacls \"$win_path\" /inheritance:r /grant:r \"%USERNAME%:F\"" >&2
+                return 1
+            fi
+            ;;
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add skills/lib/config.sh
+git commit -m "feat(skills): validate NTFS ACL on config.env (Windows)"
+```
+
+**Milestone:** Skills run on all three OSes with platform-appropriate credential storage and permission checks.
+
+---
+
+## Phase 8: Documentation and release
+
+### Task 8.1: Install guide
+
+**Files:**
+- Create: `~/claude-pal/docs/install.md`
+
+- [ ] **Step 1: Write docs/install.md**
+
+```markdown
+# Installing claude-pal
+
+## Prerequisites
+
+- **Docker** 20+ (Docker Desktop on macOS/Windows; Docker Engine on Linux)
+- **Claude Code CLI** installed on your host
+- **Git** and `gh` (GitHub CLI) — typically already installed if you're running Claude Code
+- **Full-disk encryption** enabled on the host (LUKS / FileVault / BitLocker) — documented prerequisite, not enforced
+
+### Windows additional prerequisites
+
+- **Git for Windows** (provides Git Bash which Claude Code requires)
+- If both WSL and Git Bash are installed, set `CLAUDE_CODE_GIT_BASH_PATH` in `~/.claude/settings.json`:
+  ```json
+  { "env": { "CLAUDE_CODE_GIT_BASH_PATH": "C:\\Program Files\\Git\\bin\\bash.exe" } }
+  ```
+- Optional for async notifications: `Install-Module BurntToast` in PowerShell
+
+## Install steps
+
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/<owner>/claude-pal.git ~/claude-pal
+cd ~/claude-pal
+```
+
+### 2. Build the image
+
+```bash
+./scripts/build-image.sh
+```
+
+### 3. Generate credentials
+
+**Claude authentication** (use ONE of):
+- Subscription OAuth (recommended for personal use):
+  ```bash
+  claude setup-token
+  # copy the printed token (begins sk-ant-oat01-)
+  ```
+- Console API key (from https://console.anthropic.com)
+
+**GitHub token:** create a fine-grained PAT at https://github.com/settings/personal-access-tokens. Needed scopes per repo: contents (read/write), issues (read/write), pull_requests (read/write), metadata (read).
+
+### 4. Write config.env
+
+Linux/macOS:
+```bash
+mkdir -p ~/.config/claude-pal
+cat > ~/.config/claude-pal/config.env <<EOF
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
+GH_TOKEN=github_pat_...
+EOF
+chmod 600 ~/.config/claude-pal/config.env
+```
+
+Windows (PowerShell):
+```powershell
+New-Item -Path "$env:LOCALAPPDATA\claude-pal" -ItemType Directory -Force
+@"
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
+GH_TOKEN=github_pat_...
+"@ | Out-File "$env:LOCALAPPDATA\claude-pal\config.env" -Encoding ASCII
+icacls "$env:LOCALAPPDATA\claude-pal\config.env" /inheritance:r /grant:r "${env:USERNAME}:F"
+```
+
+### 5. Install skills into Claude Code
+
+```bash
+# Copy skills into your Claude Code skill directory
+cp -r skills/pal-* ~/.claude/skills/
+```
+
+Or, if this project is ever published as a Claude Code plugin, use `/plugin install`.
+
+### 6. Verify
+
+```bash
+claude /skills  # should list pal-plan, pal-implement, pal-revise, pal-status, pal-logs, pal-cancel
+docker info     # should succeed
+echo $ANTHROPIC_API_KEY  # should be empty — unset it if set
+```
+
+## Credential hardening (optional)
+
+### macOS: use Keychain
+
+```bash
+security add-generic-password -a "$USER" -s claude-pal-oauth -w "sk-ant-oat01-..." -U
+# claude-pal auto-detects this; the token in config.env becomes optional
+```
+
+### Windows: use Credential Manager
+
+```powershell
+Install-Module CredentialManager  # one-time
+New-StoredCredential -Target "claude-pal-oauth" -UserName "$env:USERNAME" -Password (ConvertTo-SecureString -String "sk-ant-oat01-..." -AsPlainText -Force) -Persist LocalMachine
+```
+
+### Linux: use `pass`
+
+```bash
+pass insert claude-pal/oauth
+# Then in config.env:
+PAL_CRED_SOURCE=pass:claude-pal/oauth
+# CLAUDE_CODE_OAUTH_TOKEN can be omitted from config.env
+```
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "ANTHROPIC_API_KEY is set" | env var set in shell | `unset ANTHROPIC_API_KEY` |
+| "config file has permissions X, expected 600" | 0644 or similar | `chmod 600 <path>` |
+| "Claude Code is using WSL's bash, not Git Bash" (Windows) | WSL precedence | Set `CLAUDE_CODE_GIT_BASH_PATH` in Claude settings.json |
+| Container network failures | Allowlist too narrow | Extend `PAL_ALLOWLIST_EXTRA_DOMAINS` in per-repo `.pal/config.env` |
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add docs/install.md
+git commit -m "docs: install guide for all three platforms"
+```
+
+### Task 8.2: Config examples
+
+**Files:**
+- Create: `~/claude-pal/config.env.example`
+- Create: `~/claude-pal/.pal/config.env.example`
+
+- [ ] **Step 1: Write config.env.example**
+
+```bash
+cat > ~/claude-pal/config.env.example <<'EOF'
+# claude-pal host config — copy to $XDG_CONFIG_HOME/claude-pal/config.env or %LOCALAPPDATA%\claude-pal\config.env
+
+# Claude authentication (exactly one required)
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-REPLACE_ME
+# or use ANTHROPIC_API_KEY=sk-ant-api-...
+
+# GitHub authentication (personal or bot PAT)
+GH_TOKEN=github_pat_REPLACE_ME
+
+# Optional: disable desktop notifications
+# PAL_NOTIFY=false
+
+# Optional: override notification command
+# PAL_NOTIFY_COMMAND_OVERRIDE=/path/to/notifier.sh
+
+# Optional: default backend
+# PAL_BACKEND=docker-linux  # docker-linux | docker-windows | sbx-linux
+
+# Optional: remote Docker daemon
+# DOCKER_HOST=ssh://user@strongbad.local
+
+# Optional: load OAuth from 'pass' (Linux hardening; requires 'pass' installed)
+# PAL_CRED_SOURCE=pass:claude-pal/oauth
+EOF
+```
+
+- [ ] **Step 2: Write `.pal/config.env.example`**
+
+```bash
+mkdir -p ~/claude-pal/.pal
+cat > ~/claude-pal/.pal/config.env.example <<'EOF'
+# Per-repo claude-pal config — copy to .pal/config.env in your project
+
+# Test commands
+# AGENT_TEST_COMMAND=bun test
+# AGENT_TEST_SETUP_COMMAND=bun install
+
+# Phase-specific tool allowlists
+# AGENT_ALLOWED_TOOLS_IMPLEMENT=Read,Write,Edit,Bash(bun *),Bash(git *)
+
+# Model overrides
+# AGENT_MODEL_IMPLEMENT=claude-sonnet-4-6
+# AGENT_MODEL_ADVERSARIAL_PLAN=claude-sonnet-4-6
+
+# Review gate toggles
+# AGENT_ADVERSARIAL_PLAN_REVIEW=true
+# AGENT_POST_IMPL_REVIEW=true
+# AGENT_POST_IMPL_REVIEW_MAX_RETRIES=1
+
+# Allowlist extensions for private registries
+# PAL_ALLOWLIST_EXTRA_DOMAINS=private.registry.example.com,artifactory.internal
+
+# Per-repo backend override (e.g. for .NET Framework MVC)
+# PAL_BACKEND=docker-windows
+# DOCKER_HOST=ssh://user@windows-box
+EOF
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd ~/claude-pal
+git add config.env.example .pal/config.env.example
+git commit -m "docs: add config examples"
+```
+
+### Task 8.3: Upstream drift check script
+
+**Files:**
+- Create: `~/claude-pal/scripts/diff-upstream.sh`
+
+- [ ] **Step 1: Write diff-upstream.sh**
+
+```bash
+cat > ~/claude-pal/scripts/diff-upstream.sh <<'EOF'
+#!/bin/bash
+# Diff vendored files against a local claude-agent-dispatch checkout to find upstream drift.
+
+set -euo pipefail
+
+UPSTREAM_REPO="${UPSTREAM_REPO:-$HOME/claude-agent-dispatch}"
+if [ ! -d "$UPSTREAM_REPO" ]; then
+    echo "diff-upstream: $UPSTREAM_REPO not found (set UPSTREAM_REPO to a local clone)" >&2
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+declare -A MAP=(
+    ["image/opt/pal/prompts/adversarial-plan.md"]="prompts/adversarial-plan.md"
+    ["image/opt/pal/prompts/post-impl-review.md"]="prompts/post-impl-review.md"
+    ["image/opt/pal/prompts/post-impl-retry.md"]="prompts/post-impl-retry.md"
+    ["image/opt/pal/prompts/implement.md"]="prompts/implement.md"
+    ["image/opt/pal/lib/review-gates.sh"]="scripts/lib/review-gates.sh"
+)
+
+echo "=== Upstream commit ==="
+(cd "$UPSTREAM_REPO" && git log --oneline -1)
+echo ""
+
+exit_code=0
+for local_file in "${!MAP[@]}"; do
+    upstream_file="${MAP[$local_file]}"
+    printf -- "--- %s ---\n" "$local_file"
+    if diff -u "$UPSTREAM_REPO/$upstream_file" "$REPO_ROOT/$local_file" > /tmp/pal-diff.txt; then
+        echo "(unchanged)"
+    else
+        cat /tmp/pal-diff.txt
+        exit_code=1
+    fi
+    echo ""
+done
+
+exit $exit_code
+EOF
+chmod +x ~/claude-pal/scripts/diff-upstream.sh
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add scripts/diff-upstream.sh
+git commit -m "scripts: diff-upstream.sh for tracking vendored file drift"
+```
+
+### Task 8.4: README expansion
+
+**Files:**
+- Modify: `~/claude-pal/README.md`
+
+- [ ] **Step 1: Rewrite README.md**
+
+```markdown
+# claude-pal
+
+Local agent dispatch via Claude Code skills — ships ephemeral Docker containers against GitHub issues with a gated plan → implement → review pipeline.
+
+**Status:** v1.0 — working on Linux, macOS, and Windows hosts with Linux containers. Windows-container backend (for .NET Framework MVC) is v2.
+
+## What it does
+
+1. You brainstorm and plan a feature in a Claude Code CLI session (ideally via `superpowers:brainstorming` + `superpowers:writing-plans`).
+2. You run `/pal-plan [issue#]` to post the plan to a GitHub issue with an `<!-- agent-plan -->` marker.
+3. You run `/pal-implement <issue#>` to launch an ephemeral Docker container that:
+   - Runs an **adversarial plan review** (fresh Claude session, read-only tools, verifies the plan matches the issue)
+   - Implements the plan using **TDD with a retry loop** that feeds failing test output back to the model
+   - Runs a **post-implementation review** (fresh session, read-only, checks the diff for scope creep, test quality, and alignment with the issue)
+   - Retries once if the post-review finds concerns
+   - Opens a PR with `Closes #N`
+4. When a reviewer requests changes on the PR, you run `/pal-revise <pr#>` to address them.
+
+Runs are ephemeral. Credentials never enter the image — only the running container's env for the duration of one run.
+
+## Architecture
+
+See `docs/superpowers/specs/2026-04-18-claude-pal-design.md` for the full design doc.
+
+- Host side: Claude Code skills (`/pal-plan`, `/pal-implement`, `/pal-revise`, `/pal-status`, `/pal-logs`, `/pal-cancel`). Bash on Linux/macOS, Git Bash on Windows.
+- Container: Ubuntu 24.04 base + claude CLI + gh + jq + git + iptables. Runs a gated pipeline via a bash entrypoint.
+- Credentials: `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` (subscription-backed), passed as env var. GitHub via fine-grained PAT. Optional macOS Keychain / Windows Credential Manager / Linux `pass` integration.
+
+## Relationship to `claude-agent-dispatch`
+
+Sibling project. `claude-agent-dispatch` runs the same pipeline shape on self-hosted GitHub Actions runners for team/shared use. claude-pal is personal, local, and triggered from Claude Code skills rather than GitHub labels. claude-pal vendors the review-gate prompts and orchestration library from upstream — see `UPSTREAM.md`.
+
+## Getting started
+
+See `docs/install.md`.
+
+## Terms of Service
+
+claude-pal is personal, individual-use infrastructure under Anthropic's subscription-OAuth guidance. See the design doc §3 for the ToS framing and `docs/install.md` for credential handling.
+
+## License
+
+MIT. See `LICENSE`.
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd ~/claude-pal
+git add README.md
+git commit -m "docs(readme): expand to full project overview"
+```
+
+### Task 8.5: CHANGELOG and version tag
+
+**Files:**
+- Create: `~/claude-pal/CHANGELOG.md`
+
+- [ ] **Step 1: Write CHANGELOG**
+
+```markdown
+# Changelog
+
+## [1.0.0] — 2026-04-??
+
+Initial release.
+
+### Added
+- Six skills: `/pal-plan`, `/pal-implement`, `/pal-revise`, `/pal-status`, `/pal-logs`, `/pal-cancel`
+- Ubuntu-based Docker image with claude CLI, gh, jq, git, iptables allowlist
+- Gated pipeline: adversarial plan review → TDD implement → post-impl review → retry → PR
+- Sync and async run modes, cross-platform desktop notifier
+- Run registry with status reconciliation
+- Preflight checks (auth, permissions, Docker, Windows bash)
+- Per-repo config (`.pal/config.env`)
+- macOS Keychain, Windows Credential Manager, Linux `pass` credential-store auto-detection
+- Vendored review-gate library from `jnurre64/claude-agent-dispatch`
+
+### Documentation
+- Full design document (`docs/superpowers/specs/2026-04-18-claude-pal-design.md`)
+- Implementation plan (`docs/superpowers/plans/2026-04-18-claude-pal.md`)
+- Install guide (`docs/install.md`)
+- `UPSTREAM.md` tracking vendored files
+```
+
+- [ ] **Step 2: Tag v1.0.0**
+
+```bash
+cd ~/claude-pal
+git add CHANGELOG.md
+git commit -m "docs: CHANGELOG for v1.0.0"
+git tag -a v1.0.0 -m "v1.0.0 initial release"
+```
+
+**Milestone (v1.0.0):** Full `claude-pal` v1 complete with docs, config examples, platform hardening, and a tagged release.
+
+---
+
+## Self-review checklist
+
+1. **Spec coverage.** Every v1 requirement from the spec has a corresponding task:
+   - Skills × 6 — Tasks 3.5, 4.3, 5.4, 5.5, 5.6, 6.1
+   - Config + preflight — Tasks 3.1, 3.2, 7.1–7.4
+   - Run registry — Tasks 3.3, 5.4
+   - Container pipeline (phases 1–11 from spec §6.2) — Tasks 2.1–2.9
+   - Firewall allowlist — Task 2.2
+   - Vendored review gates — Tasks 1.3, 1.4, 1.5, 2.6, 2.8
+   - Plan publishing marker — Task 4.2
+   - Sync/async — Tasks 3.4, 5.2, 5.3
+   - Cross-platform notifier — Task 5.1
+   - Status/logs/cancel — Tasks 5.4, 5.5, 5.6
+   - Windows Git Bash preflight — Task 3.2 (built-in) + 7.4 (NTFS ACL)
+   - UPSTREAM tracking + diff script — Tasks 1.5, 8.3
+   - Docs + examples + release — Tasks 8.1, 8.2, 8.4, 8.5
+2. **Placeholders:** no "TBD/TODO/implement later" in any step. Every code block contains concrete code or a concrete command.
+3. **Type consistency:** status.json schema fields, env var names, and function names (`pal_load_config`, `pal_preflight_all`, `pal_launch_sync`, `pal_launch_async`, `pal_new_run_id`, `pal_run_dir`, `pal_acquire_lock`, `pal_release_lock`) are used consistently across phases.
+4. **Ambiguity:** none flagged. Preflight behavior, status outcomes, phase names, and retry counts all defined explicitly.
+
+Plan complete. Ready for execution.
