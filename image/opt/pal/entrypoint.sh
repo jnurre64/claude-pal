@@ -88,8 +88,16 @@ apply_firewall "$PAL_HOME/allowlist.yaml" || {
     exit 1
 }
 
+# shellcheck source=/dev/null
+. "$LIB_DIR/worktree.sh"
+
+STATUS_PHASE="cloning"
+setup_worktree "$REPO" "$NUMBER" "$EVENT_TYPE" || {
+    STATUS_FAILURE_REASON="worktree_setup_failed"
+    exit 1
+}
+
 STATUS_PHASE="fetching_context"
-# (Task 2.3 adds repo clone + worktree)
 # (Task 2.4 adds issue/plan fetching)
 # (Tasks 2.5–2.11 add pipeline phases)
 
