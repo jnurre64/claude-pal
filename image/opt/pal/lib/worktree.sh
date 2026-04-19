@@ -14,6 +14,9 @@ setup_worktree() {
     # For revise, branch_name comes from the PR (filled in Task 6.1); for implement, we create it fresh
     mkdir -p "$(dirname "$repo_cache")"
 
+    # Configure git to use gh as the credential helper so `git push` works over HTTPS.
+    gh auth setup-git 2>/dev/null || log "worktree: warning, gh auth setup-git failed"
+
     if [ ! -d "$repo_cache/.git" ]; then
         log "worktree: cloning $repo to $repo_cache"
         GH_TOKEN="$GH_TOKEN" gh repo clone "$repo" "$repo_cache" -- --no-tags

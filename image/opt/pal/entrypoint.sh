@@ -127,7 +127,7 @@ fi
 if [ "$EVENT_TYPE" = "implement" ]; then
     STATUS_PHASE="adversarial_review"
     AGENT_ADVERSARIAL_PLAN_REVIEW="${AGENT_ADVERSARIAL_PLAN_REVIEW:-true}"
-    AGENT_ALLOWED_TOOLS_TRIAGE="${AGENT_ALLOWED_TOOLS_TRIAGE:-Read,Glob,Grep,Bash(ls *),Bash(git log *),Bash(git diff *),Bash(git show *),Bash(echo *)}"
+    AGENT_ALLOWED_TOOLS_TRIAGE="${AGENT_ALLOWED_TOOLS_TRIAGE:-Read,Glob,Grep,Bash(ls *),Bash(git log *),Bash(git diff *),Bash(git show *),Bash(echo *),Bash(printenv *)}"
     AGENT_MODEL_ADVERSARIAL_PLAN="${AGENT_MODEL_ADVERSARIAL_PLAN:-}"
     if ! run_adversarial_plan_review; then
         # review-gates.sh sets STATUS_OUTCOME and STATUS_FAILURE_REASON on failure modes
@@ -136,7 +136,7 @@ if [ "$EVENT_TYPE" = "implement" ]; then
 fi
 
 STATUS_PHASE="implementing"
-AGENT_ALLOWED_TOOLS_IMPLEMENT="${AGENT_ALLOWED_TOOLS_IMPLEMENT:-Read,Write,Edit,Glob,Grep,Bash(git *),Bash(ls *),Bash(cat *),Bash(echo *),Bash(mkdir *),Bash(mv *),Bash(cp *),Bash(rm *),Bash(chmod *)}"
+AGENT_ALLOWED_TOOLS_IMPLEMENT="${AGENT_ALLOWED_TOOLS_IMPLEMENT:-Read,Write,Edit,Glob,Grep,Bash(git *),Bash(ls *),Bash(cat *),Bash(echo *),Bash(printenv *),Bash(mkdir *),Bash(mv *),Bash(cp *),Bash(rm *),Bash(chmod *)}"
 # Plus project-specific test and setup command tools:
 if [ -n "${AGENT_TEST_COMMAND:-}" ]; then
     AGENT_ALLOWED_TOOLS_IMPLEMENT="${AGENT_ALLOWED_TOOLS_IMPLEMENT},Bash(${AGENT_TEST_COMMAND%% *} *)"
@@ -236,6 +236,10 @@ if ! run_post_impl_review; then
 fi
 
 STATUS_PHASE="pushing_pr"
+
+# Refresh firewall rules for GitHub endpoints (IP rotation tolerance)
+refresh_firewall_for github.com
+refresh_firewall_for api.github.com
 
 # Push branch
 if ! git -C "$WORKTREE_DIR" push -u origin "$BRANCH_NAME"; then

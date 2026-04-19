@@ -20,11 +20,15 @@ run_claude() {
     cd "$WORKTREE_DIR" || return 1
     local stderr_log
     stderr_log="$STATUS_DIR/claude-stderr-$(date +%s).log"
+    # --disable-slash-commands prevents auto-activation of bundled skills
+    # (notably fewer-permission-prompts) that can hijack the turn when the
+    # agent hits repeated permission denials on phase-scoped allowlists.
     local claude_args=(
         -p "$prompt"
         --allowedTools "$allowed_tools"
         --disallowedTools "${AGENT_DISALLOWED_TOOLS:-mcp__github__*}"
         --max-turns "${AGENT_MAX_TURNS:-50}"
+        --disable-slash-commands
         --output-format json
     )
     if [ -n "$model_override" ]; then
@@ -32,11 +36,14 @@ run_claude() {
     fi
 
     local timeout="${AGENT_TIMEOUT:-3600}"
-    timeout "$timeout" claude "${claude_args[@]}" 2>"$stderr_log" || {
-        local ec=$?
-        log "claude-runner: claude exited with code $ec (stderr: $(head -10 "$stderr_log"))"
+    local stdout_log
+    stdout_log="$STATUS_DIR/claude-stdout-$(date +%s).log"
+    timeout "$timeout" claude "${claude_args[@]}" 2>"$stderr_log" | tee "$stdout_log"
+    local ec="${PIPESTATUS[0]}"
+    if [ "$ec" -ne 0 ]; then
+        log "claude-runner: claude exited with code $ec (stderr: $(head -10 "$stderr_log")) (stdout first 500: $(head -c 500 "$stdout_log"))"
         echo '{"result":"claude timed out or errored","error":true}'
-    }
+    fi
 }
 
 parse_claude_output() {

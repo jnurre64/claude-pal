@@ -51,3 +51,26 @@ apply_firewall() {
 
     log "firewall: allowlist applied (default-DROP with IP-pinned ACCEPT rules)"
 }
+
+# Re-resolve a domain and append iptables rules for any new IPs. Call before
+# latency-sensitive ops (e.g. git push) to tolerate GitHub's IP rotation.
+refresh_firewall_for() {
+    local domain="$1"
+    local ips
+    ips=$(getent ahosts "$domain" | awk '{print $1}' | sort -u || true)
+    if [ -z "$ips" ]; then
+        log "firewall-refresh: could not resolve $domain"
+        return 0
+    fi
+    local added=0
+    while IFS= read -r ip; do
+        [ -z "$ip" ] && continue
+        if ! sudo iptables -C OUTPUT -d "$ip" -p tcp --dport 443 -j ACCEPT 2>/dev/null; then
+            sudo iptables -A OUTPUT -d "$ip" -p tcp --dport 443 -j ACCEPT
+            added=$((added+1))
+        fi
+    done <<< "$ips"
+    if [ "$added" -gt 0 ]; then
+        log "firewall-refresh: added $added new IP rule(s) for $domain"
+    fi
+}
