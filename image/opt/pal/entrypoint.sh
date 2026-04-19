@@ -135,7 +135,86 @@ if [ "$EVENT_TYPE" = "implement" ]; then
     fi
 fi
 
-# (Tasks 2.7–2.11 add pipeline phases)
+STATUS_PHASE="implementing"
+AGENT_ALLOWED_TOOLS_IMPLEMENT="${AGENT_ALLOWED_TOOLS_IMPLEMENT:-Read,Write,Edit,Glob,Grep,Bash(git *),Bash(ls *),Bash(cat *),Bash(echo *),Bash(mkdir *),Bash(mv *),Bash(cp *),Bash(rm *),Bash(chmod *)}"
+# Plus project-specific test and setup command tools:
+if [ -n "${AGENT_TEST_COMMAND:-}" ]; then
+    AGENT_ALLOWED_TOOLS_IMPLEMENT="${AGENT_ALLOWED_TOOLS_IMPLEMENT},Bash(${AGENT_TEST_COMMAND%% *} *)"
+fi
+if [ -n "${AGENT_TEST_SETUP_COMMAND:-}" ]; then
+    AGENT_ALLOWED_TOOLS_IMPLEMENT="${AGENT_ALLOWED_TOOLS_IMPLEMENT},Bash(${AGENT_TEST_SETUP_COMMAND%% *} *)"
+fi
+AGENT_MODEL_IMPLEMENT="${AGENT_MODEL_IMPLEMENT:-}"
+
+# Load appropriate prompt (implement for issue, revise for PR feedback)
+if [ "$EVENT_TYPE" = "revise" ]; then
+    impl_prompt=$(load_prompt "post-impl-retry")  # Reuse retry prompt for PR revise
+    export AGENT_REVIEW_CONCERNS="${AGENT_REVIEW_FEEDBACK:-}"
+else
+    impl_prompt=$(load_prompt "implement")
+fi
+
+# Capture starting SHA to detect "no commits" case
+start_sha=$(git -C "$WORKTREE_DIR" rev-parse HEAD)
+
+# TDD retry loop: run implement; if tests fail, feed output back; up to N retries
+AGENT_IMPL_MAX_RETRIES="${AGENT_IMPL_MAX_RETRIES:-2}"
+retry=0
+test_exit=0
+while [ "$retry" -le "$AGENT_IMPL_MAX_RETRIES" ]; do
+    log "implement: attempt $((retry+1)) of $((AGENT_IMPL_MAX_RETRIES+1))"
+    result=$(run_claude "$impl_prompt" "$AGENT_ALLOWED_TOOLS_IMPLEMENT" "$AGENT_MODEL_IMPLEMENT")
+    claude_output=$(parse_claude_output "$result")
+    log "implement: claude output (first 500 chars): ${claude_output:0:500}"
+
+    # If AGENT_TEST_COMMAND is set, run it; pass on green, feed failure back if red
+    if [ -n "${AGENT_TEST_COMMAND:-}" ]; then
+        STATUS_PHASE="testing"
+        if [ -n "${AGENT_TEST_SETUP_COMMAND:-}" ]; then
+            (cd "$WORKTREE_DIR" && eval "$AGENT_TEST_SETUP_COMMAND") >> "$LOG_FILE" 2>&1 || log "warn: test setup exited non-zero"
+        fi
+
+        set +e
+        test_output=$(cd "$WORKTREE_DIR" && eval "$AGENT_TEST_COMMAND" 2>&1)
+        test_exit=$?
+        set -e
+
+        if [ "$test_exit" -eq 0 ]; then
+            log "implement: tests green on attempt $((retry+1))"
+            break
+        fi
+
+        log "implement: tests failed on attempt $((retry+1)); feeding output back"
+        # Extend the prompt with failing output for next iteration
+        impl_prompt="$impl_prompt
+
+## Previous attempt failed tests
+\`\`\`
+$(echo "$test_output" | tail -80)
+\`\`\`
+
+The code you just wrote did not pass tests. Investigate, fix, and try again."
+        retry=$((retry+1))
+    else
+        log "implement: no AGENT_TEST_COMMAND set; accepting implement output as-is"
+        break
+    fi
+done
+
+if [ -n "${AGENT_TEST_COMMAND:-}" ] && [ "$test_exit" -ne 0 ]; then
+    STATUS_FAILURE_REASON="tests_failed_after_${AGENT_IMPL_MAX_RETRIES}_retries"
+    exit 1
+fi
+
+# Capture post-implement commits
+end_sha=$(git -C "$WORKTREE_DIR" rev-parse HEAD)
+if [ "$start_sha" = "$end_sha" ]; then
+    STATUS_FAILURE_REASON="empty_diff"
+    exit 1
+fi
+
+STATUS_COMMITS=$(git -C "$WORKTREE_DIR" log --format='%h' "${start_sha}..${end_sha}" | jq -R . | jq -sc . 2>/dev/null || echo '[]')
+log "implement: captured $(git -C "$WORKTREE_DIR" rev-list --count "${start_sha}..${end_sha}") new commits"
 
 # Placeholder for now so the skeleton runs to completion
 STATUS_OUTCOME="success"
