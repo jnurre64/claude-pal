@@ -6,6 +6,27 @@ See `docs/superpowers/specs/2026-04-18-claude-pal-design.md` for the design docu
 
 **Status:** early development, v0.x. Not yet usable.
 
+## What it does
+
+1. You brainstorm and write an implementation plan (ideally via `superpowers:brainstorming` + `superpowers:writing-plans`).
+2. You run `/claude-pal:pal-plan` to post that plan to a GitHub issue with an `<!-- agent-plan -->` marker.
+3. You run `/claude-pal:pal-implement <issue#>` to launch an ephemeral Docker container that:
+   - Runs an **adversarial plan review** (fresh Claude session, read-only, verifies the plan matches the issue)
+   - Implements the plan using **TDD with a retry loop** that feeds failing tests back to the model
+   - Runs a **post-implementation review** (fresh session, read-only, checks the diff for scope creep / test quality)
+   - Retries once if the post-review finds concerns
+   - Pushes the branch and opens a PR
+
+Runs are ephemeral. Credentials never enter the image — only the running container's env for the duration of one run.
+
+## Getting started
+
+See [`docs/install.md`](docs/install.md).
+
+## Relationship to `claude-pal-action`
+
+Sibling project. `claude-pal-action` (formerly `claude-agent-dispatch`) runs the same pipeline shape on self-hosted GitHub Actions runners for team / shared use. claude-pal is personal, local, and triggered from a Claude Code session rather than GitHub labels. claude-pal vendors the review-gate prompts and orchestration library from upstream — see `UPSTREAM.md`.
+
 ## Authentication
 
 claude-pal uses **env-passthrough** exclusively — it reads credentials from your shell environment and forwards them to the container at `docker run -e ...` time. No on-disk secrets file is maintained by the plugin. This matches Anthropic's documented `anthropics/claude-code-action` pattern, which is the only sanctioned non-interactive auth mechanism for `claude` CLI.
@@ -49,7 +70,7 @@ Optional per-repository settings live in `<your-project>/.pal/config.env`. These
 
 - `/claude-pal:pal-brainstorm [idea]` — full ideation → PR flow (depends on the `superpowers` plugin)
 - `/claude-pal:pal-plan [issue#] [--file <path>]` — publish a plan file to a GitHub issue
-- `/claude-pal:pal-implement <issue#> [--async]` — dispatch the pal container on a posted plan
+- `/claude-pal:pal-implement <issue#>` — dispatch the pal container on a posted plan
 - `/claude-pal:pal-setup` — guided credential setup (interactive)
 
 Claude's natural-language skill selector also picks these up from plain-English prompts ("have pal build this", "publish this plan"), though explicit slash invocation is always available as a backup.
