@@ -2577,9 +2577,87 @@ git commit -m "feat(plugin): pal-setup walkthrough + auth docs + defer Phase 7"
 
 ---
 
-## Phase 5: Async mode, run registry management, and support skills
+## Phase 5: Async mode, run registry management, and support skills — **NEXT TO EXECUTE**
 
-**Sequencing note (2026-04-19):** Execute Phase 8 (docs + install guide + first live end-to-end test) BEFORE Phases 5 and 6. Rationale: validating the install/setup story against a real dispatch catches integration gaps that paper review misses. Phases 5 and 6 layer on top of a validated foundation rather than stacking unvalidated complexity. When Phase 8 passes, return here and run 5 → 6 in order; update docs / CHANGELOG / version tag afterward.
+**Sequencing note (2026-04-19, updated):** Phase 8 is complete. Live end-to-end validation passed (PR #27 on `Frightful-Games/recipe-manager-demo`). v0.4.0 tagged. Run Phase 5 next, then Phase 6.
+
+---
+
+### Phase 5 resume context (2026-04-19) — delete this block once Phase 5 is fully complete
+
+#### Foundation delivered by Phase 8 (all on `main`, tagged `v0.4.0`)
+
+| Commit | What it adds |
+|---|---|
+| `edf926a` | `docs/install.md` — install guide |
+| `74e416f` | `.pal/config.env.example` — per-repo non-secret config example |
+| `dff8386` | `scripts/diff-upstream.sh` — vendored-file drift checker |
+| `3cd8a39` | README: "What it does" + "Getting started" sections |
+| `7a40c52` | `docs/install.md` + `commands/pal-setup.md`: SSH path + token-hygiene callouts |
+| `ff4db07` | **Two live-validation bug fixes:** (1) `lib/launcher.sh` pre-creates log file as 0666 so container can write; (2) `image/opt/pal/lib/fetch-context.sh` falls back to issue body when no `<!-- agent-plan -->` comment exists |
+| `baa9917` | CHANGELOG.md + `plugin.json` version → 0.4.0 |
+
+Current HEAD: `629a010` (docs: plan cleanup).
+
+#### Codebase state entering Phase 5
+
+**Host-side libs already built (`~/repos/claude-pal/lib/`):**
+- `config.sh` — `pal_load_config`, PAL_IMAGE_TAG, PAL_RUNS_DIR, per-repo `.pal/config.env`
+- `preflight.sh` — single-auth, docker reachable, windows-bash, gh auth, no-double-dispatch lock
+- `runs.sh` — `pal_runs_dir`, `pal_run_dir`, `pal_new_run_id`, `pal_write_launch_meta`, `pal_acquire_lock`, `pal_release_lock`
+- `launcher.sh` — `pal_launch_sync` (sync docker run, log tee), `pal_render_status_summary`
+- `plan-locator.sh` — `pal_find_plan_file`
+- `publisher.sh` — `pal_publish_plan` (create issue or post comment with `<!-- agent-plan -->` marker)
+
+**Skills already built (`~/repos/claude-pal/skills/`):**
+- `pal-plan/SKILL.md` — publishes plan to GitHub issue
+- `pal-implement/SKILL.md` — runs sync container pipeline (no --async yet)
+
+**Commands already built (`~/repos/claude-pal/commands/`):**
+- `pal-brainstorm.md`, `pal-setup.md`
+
+**Tests (`~/repos/claude-pal/tests/`):**
+- `test_skill_pal_implement.bats` — 1 test (mocked docker happy path)
+- `test_skill_pal_plan.bats` — 2 tests (post comment, create issue)
+- All 3 pass: `tests/bats/bin/bats tests/test_skill_pal_implement.bats tests/test_skill_pal_plan.bats`
+
+**Image:** `claude-pal:latest` on local Docker daemon. Entrypoint is `image/opt/pal/entrypoint.sh`. Container libs at `image/opt/pal/lib/`.
+
+**Not yet built (Phase 5 deliverables):**
+- `lib/notify.sh` — cross-platform desktop notifier
+- `pal_launch_async` in `lib/launcher.sh` — detached container + forked watcher
+- `--async` support in `skills/pal-implement/SKILL.md`
+- `lib/status-list.sh` + `skills/pal-status/SKILL.md`
+- `skills/pal-logs/SKILL.md`
+- `pal_cancel_run` in `lib/launcher.sh` + `skills/pal-cancel/SKILL.md`
+
+#### Gotchas and ops notes
+
+1. **`pal_launch_async` watcher sources libs via `$(dirname "${BASH_SOURCE[0]}")`** — that path resolves at the time the subshell fires, which is fine since the libs are on disk. Double-check the source path in the watcher subshell matches the actual layout.
+2. **Log file pre-creation** — `pal_launch_sync` pre-creates `$run_dir/log` as 0666 before calling docker (fix from Phase 8). `pal_launch_async` does NOT use `tee` on the host side (Docker logs are harvested by the watcher after the container exits), so it does NOT need this pre-creation step.
+3. **`pal_cancel_run` status.json** — the cancel function writes a minimal status.json. Make sure the `started_at` and `completed_at` fields match the real schema used by the container entrypoint or `pal_render_status_summary` may print unknown outcome.
+4. **Test coverage** — add at least one BATS test for the async path (mock docker detach + watcher) and one for `pal_cancel_run`. Keep tests in `tests/` alongside existing `.bats` files.
+
+#### How to start this session
+
+```bash
+cd ~/repos/claude-pal
+claude  # or claude --plugin-dir ~/repos/claude-pal if testing skills interactively
+```
+
+Verify baseline before starting:
+```bash
+tests/bats/bin/bats tests/test_skill_pal_implement.bats tests/test_skill_pal_plan.bats
+# Expect: 3/3 pass
+shellcheck lib/*.sh
+# Expect: clean
+git log --oneline -3
+# Expect: HEAD = 629a010
+```
+
+Then ask Claude Code to execute Phase 5 using `superpowers:executing-plans` with this plan file.
+
+---
 
 ### Task 5.1: Cross-platform notifier
 
@@ -3052,7 +3130,7 @@ git commit -m "feat(plugin): pal-cancel for killing in-flight runs"
 
 ## Phase 6: `/pal-revise` skill
 
-**Sequencing note (2026-04-19):** Execute Phase 8 before Phase 6 (see note at Phase 5 heading). Phase 6 assumes Phase 5's async infrastructure exists and the container pipeline has been exercised end-to-end in Phase 8.
+**Sequencing note:** Phase 8 and Phase 5 must both be complete before starting Phase 6. Phase 6 assumes Phase 5's async infrastructure (`notify.sh`, `pal_launch_async`, `pal_cancel_run`) exists and the container pipeline has been exercised end-to-end.
 
 ### Task 6.1: `/pal-revise` skill markdown
 
@@ -3397,9 +3475,9 @@ git commit -m "feat(skills): validate NTFS ACL on config.env (Windows)"
 
 ---
 
-## Phase 8: Documentation and release — **NEXT TO EXECUTE**
+## Phase 8: Documentation and release — **COMPLETE (v0.4.0)**
 
-**Sequencing note (2026-04-19):** Running Phase 8 before Phases 5 and 6 per user decision. This phase locks in the install/setup story and validates it via a real end-to-end dispatch. When Phase 8 is complete, return to Phase 5 (async + status/logs/cancel) and then Phase 6 (revise). A Phase 8-refresh pass after 5/6 will extend install.md and CHANGELOG with the new surface area.
+**Sequencing note (2026-04-19):** Phase 8 was executed before Phases 5 and 6 to validate the install/setup story. Live end-to-end dispatch passed (PR #27 on `Frightful-Games/recipe-manager-demo`). v0.4.0 tagged. A Phase 8-refresh pass after 5/6 will extend `docs/install.md` and CHANGELOG with the async/revise surface area.
 
 **Feature set assumed built (pre-Phase 5/6):**
 - Skills: `/claude-pal:pal-plan`, `/claude-pal:pal-implement` (sync only)
