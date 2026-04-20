@@ -2,8 +2,10 @@
   <img src=".github/icon.png" width="600" alt="claude-pal">
 </p>
 
-[![CI](https://github.com/jnurre64/claude-pal/actions/workflows/ci.yml/badge.svg)](https://github.com/jnurre64/claude-pal/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/jnurre64/claude-pal/actions/workflows/ci.yml"><img src="https://github.com/jnurre64/claude-pal/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
 
 Local agent dispatch via a Claude Code plugin. Ships fresh Claude Code containers against GitHub issues with a gated plan → implement → review pipeline.
 
@@ -89,3 +91,7 @@ To report a security issue, see [`SECURITY.md`](SECURITY.md).
 ## License
 
 claude-pal is released under the [MIT License](LICENSE).
+
+## Disclaimer
+
+Independent, community-built project. Not affiliated with, endorsed by, or sponsored by Anthropic, PBC. "Claude" and "Claude Code" are trademarks of Anthropic; this project uses Claude Code as its underlying agent and references these trademarks solely to describe that functionality.
