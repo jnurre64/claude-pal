@@ -1,7 +1,7 @@
 #!/bin/bash
 # shellcheck disable=SC2034
 # (STATUS_OUTCOME and STATUS_FAILURE_REASON are set here and read by the
-# sourcing entrypoint.sh when it writes status.json on exit.)
+# sourcing run-pipeline.sh when it writes status.json on exit.)
 # ─── Review gates: adversarial plan review + post-implementation review ──
 # Provides: run_adversarial_plan_review, run_post_impl_review,
 #           handle_post_impl_review_retry
