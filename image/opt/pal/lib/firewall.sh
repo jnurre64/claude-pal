@@ -74,3 +74,14 @@ refresh_firewall_for() {
         log "firewall-refresh: added $added new IP rule(s) for $domain"
     fi
 }
+
+# verify_firewall_deny — assert a non-allowlisted host is unreachable.
+# Used by workspace-boot.sh as a safety check.
+verify_firewall_deny() {
+    local probe_host="${1:-example.com}"
+    if curl --max-time 3 --silent --output /dev/null "https://${probe_host}"; then
+        echo "firewall: verification FAILED - ${probe_host} reachable" >&2
+        return 1
+    fi
+    return 0
+}

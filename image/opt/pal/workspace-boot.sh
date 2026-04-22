@@ -19,7 +19,7 @@ echo "pal: programming firewall from /opt/pal/allowlist.yaml"
 apply_firewall /opt/pal/allowlist.yaml
 
 echo "pal: verifying default-deny (attempting to reach example.com)"
-if curl --max-time 3 --silent --output /dev/null https://example.com; then
+if ! verify_firewall_deny example.com; then
     echo "pal: FATAL: firewall verification failed - example.com reachable" >&2
     exit 1
 fi
