@@ -41,7 +41,10 @@ pal_preflight_workspace_ready() {
         echo "preflight: workspace container ${PAL_WORKSPACE_NAME} not found — run /pal-setup first" >&2
         return 1
     fi
-    pal_workspace_ensure_running
+    if ! pal_workspace_ensure_running; then
+        echo "preflight: failed to start workspace ${PAL_WORKSPACE_NAME}" >&2
+        return 1
+    fi
     if ! pal_workspace_is_authenticated; then
         echo "preflight: workspace not authenticated — run /pal-login" >&2
         return 1
