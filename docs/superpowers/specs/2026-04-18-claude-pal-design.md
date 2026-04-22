@@ -38,6 +38,8 @@ The project is a sibling to `jnurre64/claude-agent-dispatch`, which runs the sam
 
 ## 3. Terms of Service and threat model
 
+> **SUPERSEDED** (2026-04-21): See `docs/superpowers/specs/2026-04-21-claude-pal-auth-rework.md` — §4. Content below is preserved for history.
+
 claude-pal operates as **personal, individual-use infrastructure** under Anthropic's subscription-OAuth guidance. The design specifically matches Anthropic's documented endorsed patterns:
 
 - Only the native `claude` CLI binary runs inside the container. No Agent SDK, no third-party harness, no OAuth forwarding to non-CLI clients.
@@ -124,6 +126,8 @@ Six skills, all prefixed `pal-`. Each is a markdown file with `shell: bash` fron
 Skill implementations live in `skills/pal-*/SKILL.md` with shared helpers sourced from `skills/lib/*.sh`.
 
 ### 5.2 Config file — `~/.config/claude-pal/config.env`
+
+> **SUPERSEDED** (2026-04-21): See `docs/superpowers/specs/2026-04-21-claude-pal-auth-rework.md` — §5.3. Content below is preserved for history.
 
 Path resolution:
 - Linux/macOS: `$XDG_CONFIG_HOME/claude-pal/config.env` (fallback `~/.config/claude-pal/config.env`)
@@ -219,6 +223,8 @@ Delivery failure is non-fatal — logged but doesn't fail the run. Users can ove
 
 ### 5.6 Preflight checks
 
+> **SUPERSEDED** (2026-04-21): See `docs/superpowers/specs/2026-04-21-claude-pal-auth-rework.md` — §4. Content below is preserved for history.
+
 Each `/pal-implement` and `/pal-revise` invocation runs these before `docker run`:
 
 1. `ANTHROPIC_API_KEY` is **unset** in caller's environment (hard abort if set — silent-override footgun)
@@ -235,6 +241,8 @@ Each failure produces a specific error message with the fix.
 
 ### 6.1 Base image
 
+> **SUPERSEDED** (2026-04-21): See `docs/superpowers/specs/2026-04-21-claude-pal-auth-rework.md` — §4. Content below is preserved for history.
+
 `FROM ubuntu:24.04` with a `BASE_IMAGE` build-arg to allow future retargeting at `docker/sandbox-templates:claude-code` for sbx compatibility.
 
 Baked-in tooling:
@@ -247,6 +255,8 @@ Baked-in tooling:
 Non-root `agent` user with sudo (consistent with sbx template conventions; eases future migration). Project-specific toolchains (Node, Python, .NET, Godot/GdUnit4, etc.) are added via per-repo image extension — see §6.5.
 
 ### 6.2 Entrypoint contract
+
+> **SUPERSEDED** (2026-04-21): See `docs/superpowers/specs/2026-04-21-claude-pal-auth-rework.md` — §5.2. Content below is preserved for history.
 
 A single bash script at `/opt/pal/entrypoint.sh` implements the pipeline contract.
 
@@ -506,6 +516,8 @@ Architectural commitments made in v1 that keep v2 cheap:
 - Skill backend-adapter layer stubs `backend-docker-windows.sh` from v1 (returns "not implemented")
 
 ### 9.3 Future — sbx (Linux)
+
+> **SUPERSEDED** (2026-04-21): See `docs/superpowers/specs/2026-04-21-claude-pal-auth-rework.md` — §6. Content below is preserved for history.
 
 Contingent on:
 - sbx reaching GA with stable OAuth surface
