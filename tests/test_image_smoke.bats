@@ -2,17 +2,23 @@
 load 'test_helper/bats-support/load'
 load 'test_helper/bats-assert/load'
 
-setup() {
+# Build the image once per file, share across tests. Cheap after the first
+# build (Docker BuildKit caches layers); without this, tests 2 and 3 would
+# reference an image that was only built in test 1 and then torn down.
+setup_file() {
     REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     IMAGE_TAG="claude-pal:test-$RANDOM"
+    export IMAGE_TAG REPO_ROOT
+    "$REPO_ROOT/scripts/build-image.sh" "$IMAGE_TAG" >/dev/null
 }
 
-teardown() {
-    [ -n "${IMAGE_TAG:-}" ] && docker rmi -f "$IMAGE_TAG" 2>/dev/null || true
+teardown_file() {
+    [ -n "${IMAGE_TAG:-}" ] && docker rmi -f "$IMAGE_TAG" >/dev/null 2>&1 || true
 }
 
 @test "image builds from scratch" {
-    run "$REPO_ROOT/scripts/build-image.sh" "$IMAGE_TAG"
+    # setup_file already built it; assert presence.
+    run docker image inspect "$IMAGE_TAG"
     assert_success
 }
 

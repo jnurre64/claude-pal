@@ -22,8 +22,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
 # Non-root agent user. UID 1000 matches typical host users but is not required
-# (named volume owns its permissions).
-RUN useradd --create-home --shell /bin/bash --uid 1000 agent \
+# (named volume owns its permissions). Ubuntu 24.04's base image ships a
+# default `ubuntu` user already at UID 1000 — remove it before claiming the UID
+# for `agent`.
+RUN userdel -r ubuntu 2>/dev/null || true \
+    && useradd --create-home --shell /bin/bash --uid 1000 agent \
     && mkdir -p /home/agent/.claude /home/agent/work /status \
     && chown -R agent:agent /home/agent /status
 
