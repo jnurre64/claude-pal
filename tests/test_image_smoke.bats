@@ -46,3 +46,14 @@ teardown() {
     run jq -r '.outcome' "$STATUS_DIR/status.json"
     assert_output "success"
 }
+
+@test "image contains workspace-boot.sh and run-pipeline.sh" {
+    run docker run --rm --entrypoint sh "$IMAGE_TAG" -c 'test -x /opt/pal/workspace-boot.sh && test -x /opt/pal/run-pipeline.sh'
+    [ "$status" -eq 0 ]
+}
+
+@test "image default CMD is workspace-boot.sh" {
+    run docker inspect --format '{{json .Config.Cmd}}' "$IMAGE_TAG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"workspace-boot.sh"* ]]
+}
