@@ -1,16 +1,16 @@
 ---
-title: claude-pal — Auth and Container-Lifecycle Rework
+title: sandbox-pal — Auth and Container-Lifecycle Rework
 status: draft
 date: 2026-04-21
 author: jonny (with Claude)
-supersedes_sections_of: 2026-04-18-claude-pal-design.md  # §3, §5.2, §5.6, §6.1, §9.3
+supersedes_sections_of: 2026-04-18-sandbox-pal-design.md  # §3, §5.2, §5.6, §6.1, §9.3
 ---
 
-# claude-pal — Auth and Container-Lifecycle Rework
+# sandbox-pal — Auth and Container-Lifecycle Rework
 
 ## 1. Why this doc exists
 
-The original design (`2026-04-18-claude-pal-design.md`) locked in an **ephemeral `docker run --rm` + `CLAUDE_CODE_OAUTH_TOKEN` env-passthrough** model. Research into prior art revealed a better path: a long-running workspace container with `claude /login` run *inside* the container, modeled on Anthropic's own reference `.devcontainer`.
+The original design (`2026-04-18-sandbox-pal-design.md`) locked in an **ephemeral `docker run --rm` + `CLAUDE_CODE_OAUTH_TOKEN` env-passthrough** model. Research into prior art revealed a better path: a long-running workspace container with `claude /login` run *inside* the container, modeled on Anthropic's own reference `.devcontainer`.
 
 This doc evaluates the candidate models, picks one, and sketches the diff against the current spec. Pipeline contract, review gates, status schema, and skill surface all stay.
 
@@ -49,7 +49,7 @@ A small long-lived container owns `.credentials.json`; ephemeral workers read it
 
 Pay per session-hour + tokens; use Console API key.
 
-**Rejected.** Wrong niche for claude-pal. Not local, not personal-subscription-backed. Noted for completeness.
+**Rejected.** Wrong niche for sandbox-pal. Not local, not personal-subscription-backed. Noted for completeness.
 
 ## 4. Why Option B — base image choice and rationale
 
@@ -58,12 +58,12 @@ Pay per session-hour + tokens; use Console API key.
 Anthropic's reference `.devcontainer` (`github.com/anthropics/claude-code/tree/main/.devcontainer`) is the closest fit:
 
 - **Vendor-official.** Tacit ToS endorsement for the `/login`-inside-container pattern.
-- **Minimal** (~92-line Dockerfile + firewall script) vs Claudebox's ~400-line entrypoint with profiles/slots/tmux — all DX-wrapper concerns claude-pal doesn't need.
+- **Minimal** (~92-line Dockerfile + firewall script) vs Claudebox's ~400-line entrypoint with profiles/slots/tmux — all DX-wrapper concerns sandbox-pal doesn't need.
 - **Named Docker volume** for `/home/node/.claude` — no host-side secrets file at all. Cleaner permissions story than bind-mounts.
 - **Strong default-deny firewall**: `NET_ADMIN`+`NET_RAW` caps, `iptables -P OUTPUT DROP`, `ipset` for allowed domains, fetches GitHub CIDRs at startup, includes a verification step that tries reaching a non-allowlisted host to confirm the deny works.
 - **Single-user, single-account** by design — matches our topology.
 
-**Cherry-pick from Claudebox.** Keep the claude-pal `allowlist.yaml` data-file pattern. Borrow the "re-resolve on container start" flow (Claudebox's `getent` pass over a text file) rather than baking IPs at build time.
+**Cherry-pick from Claudebox.** Keep the sandbox-pal `allowlist.yaml` data-file pattern. Borrow the "re-resolve on container start" flow (Claudebox's `getent` pass over a text file) rather than baking IPs at build time.
 
 ### ToS posture of Option B
 
@@ -72,7 +72,7 @@ Direct quotes from official sources:
 > "OAuth authentication is intended exclusively for purchasers of Claude Free, Pro, Max, Team, and Enterprise subscription plans and is designed to support ordinary use of Claude Code and other native Anthropic applications."
 > — code.claude.com/docs/en/legal-and-compliance
 
-Since claude-pal runs the native CLI under a single human's subscription, this is endorsed. `/login` inside the container is exactly what Anthropic's reference `.devcontainer` does.
+Since sandbox-pal runs the native CLI under a single human's subscription, this is endorsed. `/login` inside the container is exactly what Anthropic's reference `.devcontainer` does.
 
 > "A single developer, on their own machine, keeping one long-running container with `/login` done inside it, `docker exec`-ing in for repeated personal CLI use, is indistinguishable under the documented rules from keeping a terminal tab open on the laptop for weeks."
 > — research synthesis, 2026-04-21
@@ -97,14 +97,14 @@ If a user insists on env-var auth, they use `claude-agent-dispatch` (sibling pro
 ### 5.1 Container lifecycle
 
 ```
-Host                                    Container: claude-pal-workspace (long-lived)
+Host                                    Container: sandbox-pal-workspace (long-lived)
 ────                                    ──────────────────────────────────────────
-/pal-setup                              → docker volume create claude-pal-claude
-                                        → docker run -d --name claude-pal-workspace
+/pal-setup                              → docker volume create sandbox-pal-claude
+                                        → docker run -d --name sandbox-pal-workspace
                                            --cap-add NET_ADMIN --cap-add NET_RAW
-                                           -v claude-pal-claude:/home/agent/.claude
+                                           -v sandbox-pal-claude:/home/agent/.claude
                                            [--cpus=… --memory=… if configured]
-                                           claude-pal:latest /opt/pal/workspace-boot.sh
+                                           sandbox-pal:latest /opt/pal/workspace-boot.sh
                                         → workspace-boot.sh: program firewall, then sleep infinity
 
 /pal-login                              → (auto-start workspace if stopped)
@@ -122,7 +122,7 @@ Host                                    Container: claude-pal-workspace (long-li
 /pal-workspace start                    → explicit start (restart if already running)
 /pal-workspace stop                     → graceful stop
 /pal-workspace restart                  → stop + start (used after config changes)
-/pal-workspace edit-rules               → opens $EDITOR on ~/.config/claude-pal/container-CLAUDE.md
+/pal-workspace edit-rules               → opens $EDITOR on ~/.config/sandbox-pal/container-CLAUDE.md
 
 /pal-logout                             → docker exec workspace rm -f
                                           /home/agent/.claude/.credentials.json
@@ -137,7 +137,7 @@ The current `entrypoint.sh` does firewall + pipeline as one script. This splits 
 
 ### 5.3 Auth state (persistent in named volume)
 
-Named Docker volume `claude-pal-claude` mounted at `/home/agent/.claude/`. Contents that persist across runs:
+Named Docker volume `sandbox-pal-claude` mounted at `/home/agent/.claude/`. Contents that persist across runs:
 
 - `.credentials.json` — minted by `/pal-login` inside the container, never leaves.
 - `.claude/settings.json` — Claude Code settings (initialized empty; user can customize via `/pal-workspace edit-settings` if we add it).
@@ -156,7 +156,7 @@ Wipe happens unconditionally at run end, regardless of outcome.
 
 On every `/pal-implement` or `/pal-revise`, before `docker exec`:
 
-1. Compute host slug from the repo's host path (e.g., `/home/jonny/repos/claude-pal` → `-home-jonny-repos-claude-pal`).
+1. Compute host slug from the repo's host path (e.g., `/home/jonny/repos/sandbox-pal` → `-home-jonny-repos-sandbox-pal`).
 2. Compute container slug from the container's planned work-dir (`/home/agent/work/<run-id>/` → `-home-agent-work-<run-id>`).
 3. Wipe the container's `projects/<container-slug>/memory/` (via `docker exec rm -rf`).
 4. `docker cp` host's `~/.claude/projects/<host-slug>/memory/` → container's `/home/agent/.claude/projects/<container-slug>/memory/`. **Preserve subdir structure** — native Claude Code Auto Memory (v2.1.59+) auto-loads `MEMORY.md` from the `memory/` subdir.
@@ -165,7 +165,7 @@ On every `/pal-implement` or `/pal-revise`, before `docker exec`:
 
 Scope: **current repo only.** Other projects' memories aren't relevant to the pipeline and are noise.
 
-Config knobs in `~/.config/claude-pal/config.env`:
+Config knobs in `~/.config/sandbox-pal/config.env`:
 
 - `PAL_SYNC_MEMORIES=true` (default: true) — turn off to skip sync entirely.
 - `PAL_SYNC_TRANSCRIPTS=false` (default: false) — opt-in only; includes `*.jsonl` in the sync if true. **Not recommended**; included for parity/debugging.
@@ -176,11 +176,11 @@ The user's host `~/.claude/CLAUDE.md` is **not** copied into the container — h
 
 Instead, pal manages a **container-scoped** CLAUDE.md:
 
-- Host path: `$XDG_CONFIG_HOME/claude-pal/container-CLAUDE.md` (fallback `~/.config/claude-pal/container-CLAUDE.md`).
+- Host path: `$XDG_CONFIG_HOME/sandbox-pal/container-CLAUDE.md` (fallback `~/.config/sandbox-pal/container-CLAUDE.md`).
 - Default: empty file created on `/pal-setup`.
 - Synced into the container at `/home/agent/.claude/CLAUDE.md` via `docker cp` on every run (same mechanism as memory sync).
 - User edits via any mechanism:
-  - `$EDITOR ~/.config/claude-pal/container-CLAUDE.md` directly.
+  - `$EDITOR ~/.config/sandbox-pal/container-CLAUDE.md` directly.
   - Optional convenience: `/pal-workspace edit-rules` opens it in `$EDITOR`.
   - Version-controlled in their dotfiles if they want.
 
@@ -196,7 +196,7 @@ This is opt-in customization — if the file is empty, the container has no CLAU
 
 ### 5.8 Resource limits (uncapped default)
 
-Optional in `~/.config/claude-pal/config.env`:
+Optional in `~/.config/sandbox-pal/config.env`:
 
 - `PAL_CPUS=` (default unset = uncapped; e.g., `2.0` for two-core cap).
 - `PAL_MEMORY=` (default unset = uncapped; e.g., `4g` for 4 GiB cap).
@@ -226,12 +226,12 @@ No new Windows-specific complexity vs the current v1 design. Kept explicitly on 
 
 ## 7. What gets rewritten in the original spec when Option B lands
 
-The implementation plan must include a **documentation-update phase** covering all claude-pal docs. Specifics:
+The implementation plan must include a **documentation-update phase** covering all sandbox-pal docs. Specifics:
 
 | Existing spec section | Revision |
 |---|---|
 | §3 ToS/threat model | Rewrite — lead with "minted-inside-container" pattern. Remove env-passthrough framing. Update citations to include the quoted Claude Code Legal & Compliance lines and the Anthropic reference devcontainer. |
-| §5.2 config file schema | Remove `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`. Add `PAL_SYNC_MEMORIES`, `PAL_SYNC_TRANSCRIPTS`, `PAL_CPUS`, `PAL_MEMORY`. Document `~/.config/claude-pal/container-CLAUDE.md` as a managed host file. |
+| §5.2 config file schema | Remove `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`. Add `PAL_SYNC_MEMORIES`, `PAL_SYNC_TRANSCRIPTS`, `PAL_CPUS`, `PAL_MEMORY`. Document `~/.config/sandbox-pal/container-CLAUDE.md` as a managed host file. |
 | §5.6 preflight | Replace "token presence check" with "workspace container healthy + authenticated" check (`docker exec workspace test -f /home/agent/.claude/.credentials.json`). Add "workspace started" auto-start behavior. |
 | §6.1 base image | Drop aspirational `BASE_IMAGE` build-arg. Base on an Anthropic-devcontainer-aligned Ubuntu image (same as current, but consciously mirror its layout/user). |
 | §6.2 entrypoint contract | Split into workspace-boot + run-pipeline as described in §5.2. Update the "Inputs" env-var table. Update the "Outputs" — still `/status/<run-id>/`, unchanged. |
@@ -244,7 +244,7 @@ Other docs to update in the implementation plan:
 - Per-skill `SKILL.md` files — preflight wording, setup expectations.
 - New: `docs/authentication.md` (or `docs/auth-model.md`) — single source of truth for the new model; cross-links to the Claude Code Legal & Compliance page and Anthropic's `.devcontainer`.
 - `CHANGELOG.md` — minor-version bump entry summarizing the rework.
-- Existing plan `docs/superpowers/plans/2026-04-18-claude-pal.md` — mark superseded phases; new plan supersedes implementation details but references this one for pipeline-contract context.
+- Existing plan `docs/superpowers/plans/2026-04-18-sandbox-pal.md` — mark superseded phases; new plan supersedes implementation details but references this one for pipeline-contract context.
 
 ## 8. Open implementation-detail items (resolved in implementation, not spec)
 
@@ -286,7 +286,7 @@ Quoted from `code.claude.com/docs/en/memory`:
 
 Native Claude Code Auto Memory (v2.1.59+) auto-loads the first 200 lines (or 25KB) of `MEMORY.md` from that subdir at SessionStart. Topic files (`.md` sibling files referenced from `MEMORY.md`) are loaded on-demand via Claude's file tools, not at startup.
 
-**For claude-pal's sync: preserve the subdir structure.** Native auto-load works without any hook or CLAUDE.md mediation. Topic-file relative links stay intact.
+**For sandbox-pal's sync: preserve the subdir structure.** Native auto-load works without any hook or CLAUDE.md mediation. Topic-file relative links stay intact.
 
 ## Appendix C: Transcript safety
 

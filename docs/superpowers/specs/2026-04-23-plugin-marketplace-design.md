@@ -1,31 +1,31 @@
-# claude-pal Plugin Marketplace — Design
+# sandbox-pal Plugin Marketplace — Design
 
 **Status:** Approved 2026-04-23
-**Issue:** [#19 — Distribute claude-pal via self-hosted GitHub plugin marketplace](https://github.com/jnurre64/claude-pal/issues/19)
+**Issue:** [#19 — Distribute sandbox-pal via self-hosted GitHub plugin marketplace](https://github.com/jnurre64/sandbox-pal/issues/19)
 **Supersedes:** —
 
 ## Goal
 
-Make `jnurre64/claude-pal` a self-hosted Claude Code plugin marketplace so end-users can install claude-pal with a one-time `/plugin marketplace add jnurre64/claude-pal` + `/plugin install claude-pal@claude-pal`, replacing the session-scoped `claude --plugin-dir ~/repos/claude-pal` flow.
+Make `jnurre64/sandbox-pal` a self-hosted Claude Code plugin marketplace so end-users can install sandbox-pal with a one-time `/plugin marketplace add jnurre64/sandbox-pal` + `/plugin install sandbox-pal@sandbox-pal`, replacing the session-scoped `claude --plugin-dir ~/repos/sandbox-pal` flow.
 
 Users never need to clone the repo. The plugin persists across Claude Code sessions. Updates arrive when we cut a new release and bump the manifest's `ref`.
 
 ## Non-goals
 
-- Prebuilt container image distribution (tracked in [#18](https://github.com/jnurre64/claude-pal/issues/18)). `/pal-setup` continues to build the image on first run.
+- Prebuilt container image distribution (tracked in [#18](https://github.com/jnurre64/sandbox-pal/issues/18)). `/pal-setup` continues to build the image on first run.
 - CI automation for `marketplace.json` `ref` bumping. Manual for v1; can be added later.
 - Multi-plugin repo layout. The flat, single-plugin layout is intentional — revisit only if a second plugin is added to the repo.
 - Version bump itself. Whether/when to cut `v0.5.0` (or `v0.6.0`, etc.) is out of scope for this issue; the release runbook below describes the mechanical step but does not prescribe the number.
 
 ## Architecture
 
-Self-hosted marketplace: the `jnurre64/claude-pal` repo hosts both the plugin *and* its `marketplace.json`.
+Self-hosted marketplace: the `jnurre64/sandbox-pal` repo hosts both the plugin *and* its `marketplace.json`.
 
 **Layout — flat.** The repo already uses `.claude-plugin/plugin.json` at its existing location. The marketplace manifest joins it as `.claude-plugin/marketplace.json`, with the plugin entry's `source` set to `"./"` (the repo root, which is where `plugin.json` lives).
 
 **Rationale.** Flat is the prevailing convention when a repo hosts exactly one plugin (e.g. `obra/superpowers`). Nested `plugins/<name>/` layouts (e.g. `anthropics/claude-code`) only exist because those repos host multiple plugins. Adopting nesting preemptively would add path indirection without benefit.
 
-**Distribution path.** `/plugin marketplace add jnurre64/claude-pal` — Claude Code clones into a managed cache at `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`. `${CLAUDE_PLUGIN_ROOT}` resolves from the cached copy, so the repo's existing `lib/` sourcing pattern (`. "${CLAUDE_PLUGIN_ROOT}/lib/*.sh"`) keeps working unchanged.
+**Distribution path.** `/plugin marketplace add jnurre64/sandbox-pal` — Claude Code clones into a managed cache at `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`. `${CLAUDE_PLUGIN_ROOT}` resolves from the cached copy, so the repo's existing `lib/` sourcing pattern (`. "${CLAUDE_PLUGIN_ROOT}/lib/*.sh"`) keeps working unchanged.
 
 **Security model.** Trust-on-first-use, no signature verification — same as every GitHub-hosted marketplace. Public repo, so no `GH_TOKEN` bootstrap problem.
 
@@ -33,18 +33,18 @@ Self-hosted marketplace: the `jnurre64/claude-pal` repo hosts both the plugin *a
 
 ```json
 {
-  "name": "claude-pal",
+  "name": "sandbox-pal",
   "owner": { "name": "jnurre64" },
   "plugins": [
     {
-      "name": "claude-pal",
+      "name": "sandbox-pal",
       "source": {
         "source": "github",
-        "repo": "jnurre64/claude-pal",
+        "repo": "jnurre64/sandbox-pal",
         "ref": "v<next>"
       },
       "description": "Local agent dispatch for Claude Code — publishes implementation plans to GitHub and runs a gated pipeline (adversarial plan review → TDD implement → post-impl review → PR) inside a long-running Docker workspace container.",
-      "homepage": "https://github.com/jnurre64/claude-pal",
+      "homepage": "https://github.com/jnurre64/sandbox-pal",
       "category": "automation"
     }
   ]
@@ -89,15 +89,15 @@ Rejected alternative: a two-phase approach (land marketplace.json first with `re
 
 Issue #19 states: *"`/pal-setup` continues to build the image on first run."* The marketplace-installed flow must not require a repo clone, so the build step moves off `scripts/build-image.sh` (a clone-only tool) and into the skill itself.
 
-**Current behavior.** `commands/pal-setup.md` is a guide — it *describes* steps for the user to run, including `docker pull claude-pal:latest (or build locally from image/)`. The skill executes nothing.
+**Current behavior.** `commands/pal-setup.md` is a guide — it *describes* steps for the user to run, including `docker pull sandbox-pal:latest (or build locally from image/)`. The skill executes nothing.
 
-**New behavior.** The skill, in addition to walking the user through env-var setup, checks whether `claude-pal:latest` exists on the local Docker daemon. If absent, it offers to build it and on confirmation runs:
+**New behavior.** The skill, in addition to walking the user through env-var setup, checks whether `sandbox-pal:latest` exists on the local Docker daemon. If absent, it offers to build it and on confirmation runs:
 
 ```bash
 docker build \
   --build-arg BASE_IMAGE="${BASE_IMAGE:-ubuntu:24.04}" \
   -f "${CLAUDE_PLUGIN_ROOT}/image/Dockerfile" \
-  -t claude-pal:latest \
+  -t sandbox-pal:latest \
   "${CLAUDE_PLUGIN_ROOT}"
 ```
 
@@ -107,28 +107,28 @@ This matches what `scripts/build-image.sh` does today; the skill just calls `doc
 
 `scripts/build-image.sh` remains in the repo unchanged — still the contributor / CI entry point when invoked from a clone.
 
-**Interaction boundary.** The skill should detect image presence with `docker image inspect claude-pal:latest >/dev/null 2>&1` and only trigger the build path when that fails. If Docker isn't reachable, the skill surfaces the error verbatim (no silent retry). If the build itself fails, likewise — the user sees `docker build` output and decides what to do.
+**Interaction boundary.** The skill should detect image presence with `docker image inspect sandbox-pal:latest >/dev/null 2>&1` and only trigger the build path when that fails. If Docker isn't reachable, the skill surfaces the error verbatim (no silent retry). If the build itself fails, likewise — the user sees `docker build` output and decides what to do.
 
-**Scope.** Image tag remains `claude-pal:latest`; no `--tag` flag exposed to users. Version-stamped image tags are future scope (related to #18 registry work).
+**Scope.** Image tag remains `sandbox-pal:latest`; no `--tag` flag exposed to users. Version-stamped image tags are future scope (related to #18 registry work).
 
 ## Documentation updates
 
 ### `docs/install.md`
 
-Current file leads with `git clone` + `claude --plugin-dir ~/repos/claude-pal`. Rewrite so **"Install steps"** becomes:
+Current file leads with `git clone` + `claude --plugin-dir ~/repos/sandbox-pal`. Rewrite so **"Install steps"** becomes:
 
 1. **Install the Claude Code plugin** — the new marketplace recipe:
    ```
-   /plugin marketplace add jnurre64/claude-pal
-   /plugin install claude-pal@claude-pal
+   /plugin marketplace add jnurre64/sandbox-pal
+   /plugin install sandbox-pal@sandbox-pal
    ```
 2. **Export `GH_TOKEN`** — unchanged.
-3. **Run `/pal-setup`** — the skill checks whether the `claude-pal:latest` image exists on the local Docker daemon and, if not, builds it from `${CLAUDE_PLUGIN_ROOT}/image/Dockerfile` with `${CLAUDE_PLUGIN_ROOT}` as the build context. No separate `build-image.sh` step in the end-user flow.
+3. **Run `/pal-setup`** — the skill checks whether the `sandbox-pal:latest` image exists on the local Docker daemon and, if not, builds it from `${CLAUDE_PLUGIN_ROOT}/image/Dockerfile` with `${CLAUDE_PLUGIN_ROOT}` as the build context. No separate `build-image.sh` step in the end-user flow.
 4. **Run `/pal-login`** — unchanged.
 
 `scripts/build-image.sh` stays in the repo as the contributor-facing entry point (invoked from the clone, used by CI and local dev loops); it is no longer surfaced in `docs/install.md`'s main "Install steps" section.
 
-A new **"Contributor / local dev loop"** section at the end of the file retains the existing `claude plugin validate ~/repos/claude-pal` + `claude --plugin-dir ~/repos/claude-pal` content plus the direct `./scripts/build-image.sh` invocation, for maintainers and PR contributors.
+A new **"Contributor / local dev loop"** section at the end of the file retains the existing `claude plugin validate ~/repos/sandbox-pal` + `claude --plugin-dir ~/repos/sandbox-pal` content plus the direct `./scripts/build-image.sh` invocation, for maintainers and PR contributors.
 
 ### `README.md`
 
@@ -136,10 +136,10 @@ Two sections need touch-ups:
 
 - **`Getting started`** currently points at `docs/install.md` — keep that pointer but add a one-line install snippet above it:
   ```
-  /plugin marketplace add jnurre64/claude-pal
-  /plugin install claude-pal@claude-pal
+  /plugin marketplace add jnurre64/sandbox-pal
+  /plugin install sandbox-pal@sandbox-pal
   ```
-- **`One-time setup`** currently opens with `docker pull claude-pal:latest`. Replace with the aligned flow: add marketplace → export `GH_TOKEN` → `/pal-setup` (which builds the image if absent) → `/pal-login`. No explicit `docker pull` / `build-image.sh` step in the end-user story.
+- **`One-time setup`** currently opens with `docker pull sandbox-pal:latest`. Replace with the aligned flow: add marketplace → export `GH_TOKEN` → `/pal-setup` (which builds the image if absent) → `/pal-login`. No explicit `docker pull` / `build-image.sh` step in the end-user story.
 
 ### Release runbook
 
@@ -155,11 +155,11 @@ CLAUDE_CONFIG_DIR=$(mktemp -d) claude
 
 Inside the session:
 
-1. `/plugin marketplace add jnurre64/claude-pal` — confirm no errors.
-2. `/plugin install claude-pal@claude-pal` — confirm install succeeds.
-3. `/plugin` — confirm `claude-pal` appears in the listed plugins.
+1. `/plugin marketplace add jnurre64/sandbox-pal` — confirm no errors.
+2. `/plugin install sandbox-pal@sandbox-pal` — confirm install succeeds.
+3. `/plugin` — confirm `sandbox-pal` appears in the listed plugins.
 4. `/skills` — confirm `pal-*` skills are present.
-5. `/claude-pal:pal-setup` — confirm the workspace container boots and credentials can be minted.
+5. `/sandbox-pal:pal-setup` — confirm the workspace container boots and credentials can be minted.
 
 Not wired into CI. Automation of this loop is deferred.
 
@@ -180,9 +180,9 @@ Steps 2 and 3 must stay in lockstep: if `plugin.json` claims a version the marke
 
 ## Pitfalls
 
-- **Cache-only resolution.** Files outside the plugin root (i.e. outside the directory named by `source`) don't make it into the Claude Code cache. The claude-pal repo keeps all runtime files under the root already, but the spec mandates a grep sweep for any `../` references before release (verified clean at spec time — only hits are in vendored bats test fixtures under `tests/bats/`, which aren't in the runtime path).
+- **Cache-only resolution.** Files outside the plugin root (i.e. outside the directory named by `source`) don't make it into the Claude Code cache. The sandbox-pal repo keeps all runtime files under the root already, but the spec mandates a grep sweep for any `../` references before release (verified clean at spec time — only hits are in vendored bats test fixtures under `tests/bats/`, which aren't in the runtime path).
 - **Private repos.** Not applicable to this repo (public), but note in docs that any user who forks to private would need `GH_TOKEN` set for `/plugin marketplace add` to succeed.
-- **User-global state.** The marketplace list lives in `~/.claude/plugins/known_marketplaces.json`, not per-project — all Claude Code sessions on a host share it. Users uninstall via `/plugin marketplace remove claude-pal`. Worth one line in docs.
+- **User-global state.** The marketplace list lives in `~/.claude/plugins/known_marketplaces.json`, not per-project — all Claude Code sessions on a host share it. Users uninstall via `/plugin marketplace remove sandbox-pal`. Worth one line in docs.
 
 ## Test plan
 
@@ -190,7 +190,7 @@ Steps 2 and 3 must stay in lockstep: if `plugin.json` claims a version the marke
 
 **Manual pre-release:** the smoke test recipe in the "Smoke test" section above.
 
-**Manual post-release:** on another clean host, repeat `/plugin marketplace add jnurre64/claude-pal` to confirm the published tag resolves.
+**Manual post-release:** on another clean host, repeat `/plugin marketplace add jnurre64/sandbox-pal` to confirm the published tag resolves.
 
 ## Open questions
 
