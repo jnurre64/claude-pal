@@ -42,6 +42,23 @@ case "$1" in
         fi
         exit 1
         ;;
+    image)
+        # Handle `docker image inspect <tag>` — success only if the tag is
+        # marked present via fake_docker_set_image_exists.
+        if [ "${2:-}" = "inspect" ] && [ -n "${3:-}" ]; then
+            safe_tag="${3//:/_}"
+            safe_tag="${safe_tag//\//_}"
+            if [ -f "$FAKE_DOCKER_STATE/image_${safe_tag}" ]; then
+                echo '[{"Id":"fake"}]'
+                exit 0
+            fi
+            exit 1
+        fi
+        # Any other `docker image <subcommand>` — default success.
+        ;;
+    build)
+        # Already logged at top of shim; default success. Tests grep the log.
+        ;;
     exec)
         # Last arg is usually the command; simulate success by default.
         if [ -f "$FAKE_DOCKER_STATE/exec_fails" ]; then
@@ -89,4 +106,18 @@ fake_docker_set_stopped() {
 
 fake_docker_set_absent() {
     rm -f "$FAKE_DOCKER_STATE/running" "$FAKE_DOCKER_STATE/exists"
+}
+
+fake_docker_set_image_exists() {
+    local tag="${1:-claude-pal:latest}"
+    local safe_tag="${tag//:/_}"
+    safe_tag="${safe_tag//\//_}"
+    : > "$FAKE_DOCKER_STATE/image_${safe_tag}"
+}
+
+fake_docker_set_image_absent() {
+    local tag="${1:-claude-pal:latest}"
+    local safe_tag="${tag//:/_}"
+    safe_tag="${safe_tag//\//_}"
+    rm -f "$FAKE_DOCKER_STATE/image_${safe_tag}"
 }
