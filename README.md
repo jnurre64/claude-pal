@@ -30,7 +30,14 @@ Claude credentials live in a Docker-managed named volume inside the workspace â€
 
 ## Getting started
 
-See [`docs/install.md`](docs/install.md).
+```
+/plugin marketplace add jnurre64/claude-pal
+/plugin install claude-pal@claude-pal
+/claude-pal:pal-setup
+/claude-pal:pal-login
+```
+
+Full walkthrough in [`docs/install.md`](docs/install.md).
 
 ## Relationship to `claude-pal-action`
 
@@ -46,17 +53,20 @@ Only `GH_TOKEN` lives in your host shell.
 
 ### One-time setup
 
-```bash
-# 1. GitHub PAT (fine-grained, Contents + Pull requests + Issues read/write)
-export GH_TOKEN=github_pat_<token>   # add to ~/.bashrc or ~/.zshrc
-
-# 2. Pull (or build) the image
-docker pull claude-pal:latest
-
-# 3. Start the workspace and mint Claude credentials
-/pal-setup     # creates the named volume + workspace container
-/pal-login     # interactive browser flow, run once per workspace lifetime
-```
+1. Export `GH_TOKEN` in your shell (add to `~/.bashrc` or `~/.zshrc`):
+   ```bash
+   export GH_TOKEN=github_pat_<token>
+   ```
+2. Install the plugin from the marketplace (from any `claude` session):
+   ```
+   /plugin marketplace add jnurre64/claude-pal
+   /plugin install claude-pal@claude-pal
+   ```
+3. Provision the workspace and credentials:
+   ```
+   /claude-pal:pal-setup     # builds the image if absent; creates the workspace
+   /claude-pal:pal-login     # interactive browser flow, run once per workspace lifetime
+   ```
 
 ### Resource caps (optional)
 
