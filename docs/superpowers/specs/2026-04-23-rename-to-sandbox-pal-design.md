@@ -8,6 +8,8 @@
 
 Rename the product brand from `claude-pal` to `sandbox-pal` across the repository and GitHub, without touching the `pal-*` command/skill namespace, the `PAL_*` env vars, the `.pal/` per-repo config dir, or the version number. After this change, the plugin, Docker artifacts, host config path, manifests, and docs consistently say `sandbox-pal`; the user-visible CLI surface (slash commands, env vars, repo-local config) is byte-for-byte identical to before.
 
+**Motivation.** Two reasons: (1) position the project as AI-model-agnostic — the sandboxed pipeline is the product, not the specific upstream model; and (2) drop "Claude" from the product's own brand to avoid confusion or conflict with Anthropic's trademark. The substitution target `sandbox-pal` emphasizes the sandboxing/container-isolation property that is the real value.
+
 ## Non-goals
 
 - Renaming any `pal-*` command, skill, `PAL_*` env var, or the `.pal/` per-repo config directory.
