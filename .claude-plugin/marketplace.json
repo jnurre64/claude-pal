@@ -1,0 +1,17 @@
+{
+  "name": "claude-pal",
+  "owner": { "name": "jnurre64" },
+  "plugins": [
+    {
+      "name": "claude-pal",
+      "source": {
+        "source": "github",
+        "repo": "jnurre64/claude-pal",
+        "ref": "main"
+      },
+      "description": "Local agent dispatch for Claude Code — publishes implementation plans to GitHub and runs a gated pipeline (adversarial plan review → TDD implement → post-impl review → PR) inside a long-running Docker workspace container.",
+      "homepage": "https://github.com/jnurre64/claude-pal",
+      "category": "automation"
+    }
+  ]
+}
