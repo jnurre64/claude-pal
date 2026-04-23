@@ -1,19 +1,19 @@
 {
-  "name": "claude-pal",
+  "name": "sandbox-pal",
   "owner": { "name": "jnurre64" },
   "metadata": {
-    "description": "Self-hosted marketplace for claude-pal — a Claude Code plugin that dispatches agent runs against GitHub issues inside a long-running Docker workspace container."
+    "description": "Self-hosted marketplace for sandbox-pal — a Claude Code plugin that dispatches agent runs against GitHub issues inside a long-running Docker workspace container."
   },
   "plugins": [
     {
-      "name": "claude-pal",
+      "name": "sandbox-pal",
       "source": {
         "source": "github",
-        "repo": "jnurre64/claude-pal",
-        "ref": "v0.5.0"
+        "repo": "jnurre64/sandbox-pal",
+        "ref": "main"
       },
       "description": "Local agent dispatch for Claude Code — publishes implementation plans to GitHub and runs a gated pipeline (adversarial plan review → TDD implement → post-impl review → PR) inside a long-running Docker workspace container.",
-      "homepage": "https://github.com/jnurre64/claude-pal",
+      "homepage": "https://github.com/jnurre64/sandbox-pal",
       "category": "automation"
     }
   ]

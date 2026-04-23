@@ -9,7 +9,7 @@
 
 ## Motivation
 
-Derived from a comparative audit of `jnurre64/claude-pal-action` (strong open source hygiene baseline) and `jnurre64/claude-pal` (missing several standard GitHub community health files and CI/CD automation). The skill encodes the findings as a reusable checklist so any repo can be brought to the same standard.
+Derived from a comparative audit of `jnurre64/claude-pal-action` (strong open source hygiene baseline) and `jnurre64/sandbox-pal` (missing several standard GitHub community health files and CI/CD automation). The skill encodes the findings as a reusable checklist so any repo can be brought to the same standard.
 
 ## Architecture
 

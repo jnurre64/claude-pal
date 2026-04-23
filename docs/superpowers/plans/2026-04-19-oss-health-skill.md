@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Create a standalone global Claude Code skill at `~/.claude/skills/oss-health/SKILL.md` that audits open source repository best practices, scaffolds missing files, and guides users through UI-only steps — then apply it to validate and fix claude-pal.
+**Goal:** Create a standalone global Claude Code skill at `~/.claude/skills/oss-health/SKILL.md` that audits open source repository best practices, scaffolds missing files, and guides users through UI-only steps — then apply it to validate and fix sandbox-pal.
 
 **Architecture:** A single SKILL.md with five clearly-delimited sections (files, readme, github, ci, releases). Arg routing at the top lets users run a full audit or jump to one section. Each section has tiered checks (essential/important/polish), reports status with ✓/✗/⚠, and either creates missing files or prints numbered walkthrough steps for UI-only items.
 
@@ -16,7 +16,7 @@
 |------|--------|---------|
 | `~/.claude/skills/oss-health/SKILL.md` | Create | The skill — all five sections |
 
-No other files. After the skill is built, Tasks 7–9 apply it to claude-pal, which will create several files in that repo (CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, .github/ tree, etc.).
+No other files. After the skill is built, Tasks 7–9 apply it to sandbox-pal, which will create several files in that repo (CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, .github/ tree, etc.).
 
 ---
 
@@ -228,13 +228,13 @@ Check for community health files at the repo root. Use Glob to check existence.
 - If present: `✓ MAINTAINERS / AUTHORS`
 ````
 
-- [ ] **Step 2: Smoke-test the files section on claude-pal**
+- [ ] **Step 2: Smoke-test the files section on sandbox-pal**
 
 In a Claude Code session with the skill loaded, run:
 ```
 /oss-health files
 ```
-on the claude-pal repo. Expected: Claude reports `✗ CONTRIBUTING.md`, `✗ CODE_OF_CONDUCT.md`, `✗ SECURITY.md`, `✓ LICENSE`, `✓ CHANGELOG.md`, `✓ .gitignore`, `✗ CITATION.cff`.
+on the sandbox-pal repo. Expected: Claude reports `✗ CONTRIBUTING.md`, `✗ CODE_OF_CONDUCT.md`, `✗ SECURITY.md`, `✓ LICENSE`, `✓ CHANGELOG.md`, `✓ .gitignore`, `✗ CITATION.cff`.
 
 - [ ] **Step 3: Commit**
 
@@ -376,9 +376,9 @@ Check README.md content quality. Read the full file before checking.
 - If present: `✓ README links to docs`
 ````
 
-- [ ] **Step 2: Smoke-test the readme section on claude-pal**
+- [ ] **Step 2: Smoke-test the readme section on sandbox-pal**
 
-Run `/oss-health readme` on claude-pal. Expected: `✓ README exists`, `✓ has description`, `✓ has install/usage`, `✗ license badge`, `✗ CI badge` (no workflow yet), `✓ contributing section`, `✓ license section`, `⚠ disclaimer` (mentions Anthropic/Claude without disclaimer check).
+Run `/oss-health readme` on sandbox-pal. Expected: `✓ README exists`, `✓ has description`, `✓ has install/usage`, `✗ license badge`, `✗ CI badge` (no workflow yet), `✓ contributing section`, `✓ license section`, `⚠ disclaimer` (mentions Anthropic/Claude without disclaimer check).
 
 - [ ] **Step 3: Commit**
 
@@ -645,9 +645,9 @@ Check the `.github/` directory structure. Use Glob to check for files.
 - If present: `✓ Stale management configured`
 ````
 
-- [ ] **Step 2: Smoke-test the github section on claude-pal**
+- [ ] **Step 2: Smoke-test the github section on sandbox-pal**
 
-Run `/oss-health github` on claude-pal. Expected: `✗ CI workflow`, `✗ PR template`, `✗ bug report template`, `✗ feature request template`, `✗ CODEOWNERS`, `✗ dependabot.yml`, `✗ FUNDING.yml`, `✗ stale.yml`.
+Run `/oss-health github` on sandbox-pal. Expected: `✗ CI workflow`, `✗ PR template`, `✗ bug report template`, `✗ feature request template`, `✗ CODEOWNERS`, `✗ dependabot.yml`, `✗ FUNDING.yml`, `✗ stale.yml`.
 
 - [ ] **Step 3: Commit**
 
@@ -727,9 +727,9 @@ For checks below, inspect all found workflow files collectively.
 - If present: `✓ Security scanning configured`
 ````
 
-- [ ] **Step 2: Smoke-test the ci section on claude-pal**
+- [ ] **Step 2: Smoke-test the ci section on sandbox-pal**
 
-Run `/oss-health ci` on claude-pal before any workflow is created. Expected: `✗ No CI workflows found — run /oss-health github to scaffold one first`.
+Run `/oss-health ci` on sandbox-pal before any workflow is created. Expected: `✗ No CI workflows found — run /oss-health github to scaffold one first`.
 
 - [ ] **Step 3: Commit**
 
@@ -851,9 +851,9 @@ To activate GitHub Sponsors (FUNDING.yml has been created):
 ```
 ````
 
-- [ ] **Step 2: Smoke-test the releases section on claude-pal**
+- [ ] **Step 2: Smoke-test the releases section on sandbox-pal**
 
-Run `/oss-health releases` on claude-pal. Expected: `⚠ pre-release noted in README but no tags yet` (README says "v0.x, Not yet usable"), `✓ CHANGELOG has release entries`, `⚠ tags don't follow semver` (no tags yet), `✓ Keep a Changelog format`.
+Run `/oss-health releases` on sandbox-pal. Expected: `⚠ pre-release noted in README but no tags yet` (README says "v0.x, Not yet usable"), `✓ CHANGELOG has release entries`, `⚠ tags don't follow semver` (no tags yet), `✓ Keep a Changelog format`.
 
 - [ ] **Step 3: Commit**
 
@@ -863,13 +863,13 @@ cd ~/.claude && git add skills/oss-health/SKILL.md && git commit -m "feat(skill)
 
 ---
 
-## Task 7: Full run validation on claude-pal
+## Task 7: Full run validation on sandbox-pal
 
 Validate the complete skill works end-to-end before applying fixes.
 
 - [ ] **Step 1: Run full audit without fixing**
 
-In a Claude Code session on the claude-pal repo, run:
+In a Claude Code session on the sandbox-pal repo, run:
 ```
 /oss-health
 ```
@@ -892,18 +892,18 @@ Run `/oss-health badarg` — confirm the error message prints and stops.
 
 ---
 
-## Task 8: Apply the skill to claude-pal — auto-fixable items
+## Task 8: Apply the skill to sandbox-pal — auto-fixable items
 
 - [ ] **Step 1: Run the skill and accept all auto-fixes**
 
-In a Claude Code session on the claude-pal repo, run:
+In a Claude Code session on the sandbox-pal repo, run:
 ```
 /oss-health
 ```
 
 When asked "Fix all auto-fixable gaps automatically?", answer **y**.
 
-The skill should create the following files in the claude-pal repo:
+The skill should create the following files in the sandbox-pal repo:
 - `CONTRIBUTING.md`
 - `CODE_OF_CONDUCT.md`
 - `SECURITY.md`
@@ -922,14 +922,14 @@ The skill should create the following files in the claude-pal repo:
 Read each created file and verify:
 - CONTRIBUTING.md references BATS and shellcheck (shell/bats stack detected)
 - CODE_OF_CONDUCT.md has the contact email filled in (not placeholder)
-- SECURITY.md references the correct GitHub advisory URL for jnurre64/claude-pal
+- SECURITY.md references the correct GitHub advisory URL for jnurre64/sandbox-pal
 - `ci.yml` has `shellcheck` and `bats tests/` steps, triggers on `pull_request`
 - CODEOWNERS has `* @jnurre64`
 - README badges are at the top and link to correct URLs
 
 Fix any issues manually before committing.
 
-- [ ] **Step 3: Commit all generated files to claude-pal**
+- [ ] **Step 3: Commit all generated files to sandbox-pal**
 
 ```bash
 git add CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md .github/
@@ -939,23 +939,23 @@ git commit -m "chore: apply oss-health skill — add community health files and 
 
 ---
 
-## Task 9: Apply the skill to claude-pal — manual walkthrough items
+## Task 9: Apply the skill to sandbox-pal — manual walkthrough items
 
 - [ ] **Step 1: Follow the branch protection walkthrough**
 
 The skill will have printed the branch protection steps. Follow them:
-1. GitHub → jnurre64/claude-pal → Settings → Branches → Add rule
+1. GitHub → jnurre64/sandbox-pal → Settings → Branches → Add rule
 2. Pattern: `main`
 3. Enable: Require PR before merging, Require status checks (add `shellcheck` and `test` job names), Do not allow bypassing
 
 - [ ] **Step 2: Follow the repo topics walkthrough**
 
-1. GitHub → jnurre64/claude-pal → gear icon next to About
+1. GitHub → jnurre64/sandbox-pal → gear icon next to About
 2. Add topics: `claude-code`, `automation`, `docker`, `github-agent`, `plugin`
 
 - [ ] **Step 3: Follow the secret scanning walkthrough**
 
-1. GitHub → jnurre64/claude-pal → Settings → Security
+1. GitHub → jnurre64/sandbox-pal → Settings → Security
 2. Enable Dependabot alerts, Secret scanning, Push protection
 
 - [ ] **Step 4: Run /oss-health one more time to confirm clean**

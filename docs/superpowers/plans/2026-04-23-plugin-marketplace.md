@@ -2,14 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Publish claude-pal as a self-hosted Claude Code plugin marketplace at `jnurre64/claude-pal` so end-users install it with `/plugin marketplace add jnurre64/claude-pal` + `/plugin install claude-pal@claude-pal` instead of cloning and using session-scoped `--plugin-dir`.
+**Goal:** Publish sandbox-pal as a self-hosted Claude Code plugin marketplace at `jnurre64/sandbox-pal` so end-users install it with `/plugin marketplace add jnurre64/sandbox-pal` + `/plugin install sandbox-pal@sandbox-pal` instead of cloning and using session-scoped `--plugin-dir`.
 
 **Architecture:** Add `.claude-plugin/marketplace.json` next to the existing `plugin.json` with a single flat plugin entry (`source: "./"`). Move the image-build step out of the user-facing docs and into `/pal-setup` so the marketplace install flow does not require a repo clone. Contributor clone-and-`--plugin-dir` workflow stays, documented separately. Release follows Model A: pin `marketplace.json` `ref` to the latest tag and bump per release.
 
 **Tech Stack:** Bash + shellcheck + BATS-Core (existing test toolchain), Docker (for image-build path), `jq` (for CI JSON validation), Claude Code plugin manifest schema.
 
 **Spec:** `docs/superpowers/specs/2026-04-23-plugin-marketplace-design.md`
-**Issue:** [#19](https://github.com/jnurre64/claude-pal/issues/19)
+**Issue:** [#19](https://github.com/jnurre64/sandbox-pal/issues/19)
 
 ---
 
@@ -21,7 +21,7 @@
 - `tests/test_image.bats` — BATS tests for `lib/image.sh` using the `fake-docker.sh` shim
 
 **Modify:**
-- `commands/pal-setup.md` — incorporate the image-ensure step (replacing the `docker pull claude-pal:latest (or build locally from image/)` guidance)
+- `commands/pal-setup.md` — incorporate the image-ensure step (replacing the `docker pull sandbox-pal:latest (or build locally from image/)` guidance)
 - `docs/install.md` — rewrite "Install steps" for marketplace flow; move clone-based workflow into a "Contributor / local dev loop" section at the end
 - `README.md` — update "Getting started" one-liner and the "One-time setup" block
 - `tests/test_helper/fake-docker.sh` — extend the shim to distinguish `docker image inspect` from container `inspect`, and to record `docker build` calls
@@ -61,20 +61,20 @@ setup() { fake_docker_setup; }
 teardown() { fake_docker_teardown; }
 
 @test "fake docker: 'image inspect' fails when image not registered" {
-    run docker image inspect claude-pal:latest
+    run docker image inspect sandbox-pal:latest
     assert_failure
 }
 
 @test "fake docker: 'image inspect' succeeds after fake_docker_set_image_exists" {
-    fake_docker_set_image_exists claude-pal:latest
-    run docker image inspect claude-pal:latest
+    fake_docker_set_image_exists sandbox-pal:latest
+    run docker image inspect sandbox-pal:latest
     assert_success
 }
 
 @test "fake docker: 'build' is recorded in FAKE_DOCKER_LOG" {
-    run docker build -t claude-pal:latest -f some/Dockerfile .
+    run docker build -t sandbox-pal:latest -f some/Dockerfile .
     assert_success
-    run grep -F "build -t claude-pal:latest" "$FAKE_DOCKER_LOG"
+    run grep -F "build -t sandbox-pal:latest" "$FAKE_DOCKER_LOG"
     assert_success
 }
 ```
@@ -109,7 +109,7 @@ In `tests/test_helper/fake-docker.sh`, inside the `case "$1" in` block (between 
         ;;
 ```
 
-The `${3//:/_}` swap maps `claude-pal:latest` to `claude-pal_latest` — a legal filename. The `image_` prefix keeps image-presence markers distinct from `exists` / `running` container markers used elsewhere in the shim. Keep the existing `echo "$*" >> "$FAKE_DOCKER_LOG"` at the top of the shim — it already captures every invocation including `build`.
+The `${3//:/_}` swap maps `sandbox-pal:latest` to `sandbox-pal_latest` — a legal filename. The `image_` prefix keeps image-presence markers distinct from `exists` / `running` container markers used elsewhere in the shim. Keep the existing `echo "$*" >> "$FAKE_DOCKER_LOG"` at the top of the shim — it already captures every invocation including `build`.
 
 - [ ] **Step 5: Add the `fake_docker_set_image_exists` / `fake_docker_set_image_absent` helpers**
 
@@ -117,12 +117,12 @@ After the existing `fake_docker_set_absent` function in the shim, add:
 
 ```bash
 fake_docker_set_image_exists() {
-    local tag="${1:-claude-pal:latest}"
+    local tag="${1:-sandbox-pal:latest}"
     : > "$FAKE_DOCKER_STATE/image_${tag//:/_}"
 }
 
 fake_docker_set_image_absent() {
-    local tag="${1:-claude-pal:latest}"
+    local tag="${1:-sandbox-pal:latest}"
     rm -f "$FAKE_DOCKER_STATE/image_${tag//:/_}"
 }
 ```
@@ -185,20 +185,20 @@ teardown() {
 }
 
 @test "pal_image_exists: returns success when image is present" {
-    fake_docker_set_image_exists claude-pal:latest
+    fake_docker_set_image_exists sandbox-pal:latest
     run pal_image_exists
     assert_success
 }
 
 @test "pal_image_exists: returns failure when image is absent" {
-    fake_docker_set_image_absent claude-pal:latest
+    fake_docker_set_image_absent sandbox-pal:latest
     run pal_image_exists
     assert_failure
 }
 
 @test "pal_image_exists: uses PAL_WORKSPACE_IMAGE override" {
-    fake_docker_set_image_exists claude-pal:v0.5.0
-    PAL_WORKSPACE_IMAGE=claude-pal:v0.5.0 run pal_image_exists
+    fake_docker_set_image_exists sandbox-pal:v0.5.0
+    PAL_WORKSPACE_IMAGE=sandbox-pal:v0.5.0 run pal_image_exists
     assert_success
 }
 ```
@@ -216,9 +216,9 @@ Expected: all three tests FAIL — bats reports that `lib/image.sh` cannot be so
 ```bash
 # lib/image.sh
 # shellcheck shell=bash
-# Host-side helpers for the claude-pal container image.
+# Host-side helpers for the sandbox-pal container image.
 
-: "${PAL_WORKSPACE_IMAGE:=claude-pal:latest}"
+: "${PAL_WORKSPACE_IMAGE:=sandbox-pal:latest}"
 
 pal_image_exists() {
     docker image inspect "$PAL_WORKSPACE_IMAGE" >/dev/null 2>&1
@@ -247,7 +247,7 @@ Expected: zero warnings.
 
 ```bash
 git add lib/image.sh tests/test_image.bats
-git commit -m "feat(lib): add pal_image_exists check for claude-pal:latest"
+git commit -m "feat(lib): add pal_image_exists check for sandbox-pal:latest"
 ```
 
 ---
@@ -270,7 +270,7 @@ Append to `tests/test_image.bats`:
     assert_success
     run grep -F -- "-f ${CLAUDE_PLUGIN_ROOT}/image/Dockerfile" "$FAKE_DOCKER_LOG"
     assert_success
-    run grep -F -- "-t claude-pal:latest" "$FAKE_DOCKER_LOG"
+    run grep -F -- "-t sandbox-pal:latest" "$FAKE_DOCKER_LOG"
     assert_success
     # Build context is the plugin root (trailing positional).
     run grep -F -- "${CLAUDE_PLUGIN_ROOT}" "$FAKE_DOCKER_LOG"
@@ -292,9 +292,9 @@ Append to `tests/test_image.bats`:
 }
 
 @test "pal_image_build: respects PAL_WORKSPACE_IMAGE tag override" {
-    PAL_WORKSPACE_IMAGE=claude-pal:v0.5.0 run pal_image_build
+    PAL_WORKSPACE_IMAGE=sandbox-pal:v0.5.0 run pal_image_build
     assert_success
-    run grep -F -- "-t claude-pal:v0.5.0" "$FAKE_DOCKER_LOG"
+    run grep -F -- "-t sandbox-pal:v0.5.0" "$FAKE_DOCKER_LOG"
     assert_success
 }
 ```
@@ -363,7 +363,7 @@ Append to `tests/test_image.bats`:
 
 ```bash
 @test "pal_image_ensure: builds when image is absent" {
-    fake_docker_set_image_absent claude-pal:latest
+    fake_docker_set_image_absent sandbox-pal:latest
     run pal_image_ensure
     assert_success
     run grep -F "build" "$FAKE_DOCKER_LOG"
@@ -371,7 +371,7 @@ Append to `tests/test_image.bats`:
 }
 
 @test "pal_image_ensure: does NOT build when image is already present" {
-    fake_docker_set_image_exists claude-pal:latest
+    fake_docker_set_image_exists sandbox-pal:latest
     run pal_image_ensure
     assert_success
     run grep -F "build" "$FAKE_DOCKER_LOG"
@@ -379,10 +379,10 @@ Append to `tests/test_image.bats`:
 }
 
 @test "pal_image_ensure: prints progress note when building" {
-    fake_docker_set_image_absent claude-pal:latest
+    fake_docker_set_image_absent sandbox-pal:latest
     run pal_image_ensure
     assert_success
-    assert_output --partial "pal: building claude-pal:latest"
+    assert_output --partial "pal: building sandbox-pal:latest"
 }
 ```
 
@@ -436,7 +436,7 @@ git commit -m "feat(lib): add pal_image_ensure (build-if-absent compose point)"
 
 ## Task 5: Wire `pal_image_ensure` into `/pal-setup`
 
-Replace the current step-3 guidance (`docker pull claude-pal:latest (or build locally from image/)`) with a direct call to `pal_image_ensure`. The skill still walks the user through env-var and credentials steps — only the image provisioning changes.
+Replace the current step-3 guidance (`docker pull sandbox-pal:latest (or build locally from image/)`) with a direct call to `pal_image_ensure`. The skill still walks the user through env-var and credentials steps — only the image provisioning changes.
 
 **Files:**
 - Modify: `commands/pal-setup.md`
@@ -446,9 +446,9 @@ Replace the current step-3 guidance (`docker pull claude-pal:latest (or build lo
 Replace the entire current body of `commands/pal-setup.md` (keeping the frontmatter untouched) with:
 
 ````markdown
-# /claude-pal:pal-setup
+# /sandbox-pal:pal-setup
 
-Guided, one-time setup for claude-pal.
+Guided, one-time setup for sandbox-pal.
 
 Walk the user through:
 
@@ -460,7 +460,7 @@ Walk the user through:
        source ~/.bashrc
 
    The PAT needs `Contents`, `Pull requests`, `Issues` (read/write) on target repos.
-3. Ensure the `claude-pal:latest` image is present. Source the helper and call
+3. Ensure the `sandbox-pal:latest` image is present. Source the helper and call
    `pal_image_ensure`:
 
        . "${CLAUDE_PLUGIN_ROOT}/lib/image.sh"
@@ -477,12 +477,12 @@ Walk the user through:
 4. Run `/pal-workspace start` — creates the named volume and the long-running
    workspace container.
 5. Run `/pal-login` — mints Claude credentials inside the workspace (one-time
-   interactive browser flow). Credentials persist in the `claude-pal-claude`
+   interactive browser flow). Credentials persist in the `sandbox-pal-claude`
    named volume; they never touch the host filesystem.
 6. (Optional) `/pal-workspace edit-rules` — opens an empty
-   `~/.config/claude-pal/container-CLAUDE.md` that will be synced into the
+   `~/.config/sandbox-pal/container-CLAUDE.md` that will be synced into the
    container on every run. Use it for container-scoped behavior rules.
-7. (Optional) create `~/.config/claude-pal/config.env` with non-secret knobs:
+7. (Optional) create `~/.config/sandbox-pal/config.env` with non-secret knobs:
 
        PAL_CPUS=2.0
        PAL_MEMORY=4g
@@ -520,14 +520,14 @@ Ships the marketplace manifest. `ref` is set to `"main"` during development; the
 
 ```json
 {
-  "name": "claude-pal",
+  "name": "sandbox-pal",
   "owner": { "name": "jnurre64" },
   "plugins": [
     {
-      "name": "claude-pal",
+      "name": "sandbox-pal",
       "source": "./",
       "description": "Local agent dispatch for Claude Code — publishes implementation plans to GitHub and runs a gated pipeline (adversarial plan review → TDD implement → post-impl review → PR) inside a long-running Docker workspace container.",
-      "homepage": "https://github.com/jnurre64/claude-pal",
+      "homepage": "https://github.com/jnurre64/sandbox-pal",
       "category": "automation",
       "ref": "main"
     }
@@ -620,7 +620,7 @@ Replace from `## Install steps` through the end of step 7 ("### 7. First live di
 
 ### 1. Export `GH_TOKEN` in your shell profile
 
-claude-pal only needs **one** host env var: `GH_TOKEN`. Claude credentials live inside the workspace container (step 3) — they are never exported from your shell.
+sandbox-pal only needs **one** host env var: `GH_TOKEN`. Claude credentials live inside the workspace container (step 3) — they are never exported from your shell.
 
 Create a fine-grained GitHub PAT at https://github.com/settings/personal-access-tokens. Grant repository access for each repo you plan to dispatch against, with these scopes:
 
@@ -632,7 +632,7 @@ Create a fine-grained GitHub PAT at https://github.com/settings/personal-access-
 Append to `~/.bashrc` (or `~/.zshrc`):
 
 ```bash
-# claude-pal
+# sandbox-pal
 export GH_TOKEN=github_pat_...your-PAT...
 ```
 
@@ -644,21 +644,21 @@ Save, then `source ~/.bashrc` in any shell that needs the new value.
 # Open a new PowerShell / Git Bash to pick up the new env
 ```
 
-> **Do not** set `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` in your shell — the workspace-container model does not use them. If you have them set from an earlier claude-pal install, `unset` them and remove them from your rc files. See [`docs/authentication.md`](authentication.md) for the full rationale.
+> **Do not** set `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` in your shell — the workspace-container model does not use them. If you have them set from an earlier sandbox-pal install, `unset` them and remove them from your rc files. See [`docs/authentication.md`](authentication.md) for the full rationale.
 
 ### 2. Install the Claude Code plugin from the marketplace
 
 From any `claude` session:
 
 ```
-/plugin marketplace add jnurre64/claude-pal
-/plugin install claude-pal@claude-pal
+/plugin marketplace add jnurre64/sandbox-pal
+/plugin install sandbox-pal@sandbox-pal
 ```
 
 Claude Code pulls the repo into its plugin cache and persists the install across sessions. Verify:
 
 ```
-/plugin          # should show claude-pal as loaded
+/plugin          # should show sandbox-pal as loaded
 /skills          # should list pal-plan, pal-implement, pal-workspace, pal-login, pal-logout, etc.
 ```
 
@@ -667,40 +667,40 @@ Claude Code pulls the repo into its plugin cache and persists the install across
 In the same session:
 
 ```
-/claude-pal:pal-setup
+/sandbox-pal:pal-setup
 ```
 
-`pal-setup` verifies Docker + `GH_TOKEN`, then ensures the `claude-pal:latest` image exists. The first time you run it, `pal-setup` will offer to build the image (a few minutes; `docker build` against the Dockerfile inside the cached plugin). Subsequent runs are no-ops for the image step.
+`pal-setup` verifies Docker + `GH_TOKEN`, then ensures the `sandbox-pal:latest` image exists. The first time you run it, `pal-setup` will offer to build the image (a few minutes; `docker build` against the Dockerfile inside the cached plugin). Subsequent runs are no-ops for the image step.
 
 ```
-/claude-pal:pal-login
+/sandbox-pal:pal-login
 # → opens a browser to authorize Claude inside the workspace
-# → writes /home/agent/.claude/.credentials.json into the `claude-pal-claude` named volume
+# → writes /home/agent/.claude/.credentials.json into the `sandbox-pal-claude` named volume
 # → one-time, persists for the workspace's lifetime
 ```
 
 Verify:
 
 ```
-/claude-pal:pal-workspace status
+/sandbox-pal:pal-workspace status
 ```
 
 From the host shell you can inspect the volume:
 
 ```bash
-docker volume inspect claude-pal-claude
-docker exec claude-pal-workspace ls -la /home/agent/.claude/
+docker volume inspect sandbox-pal-claude
+docker exec sandbox-pal-workspace ls -la /home/agent/.claude/
 ```
 
 ### 4. First live dispatch (validate end-to-end)
 
 ```
 # From a checkout of a GitHub repo the PAT can access:
-/claude-pal:pal-plan
+/sandbox-pal:pal-plan
 # → publishes the most recent docs/superpowers/plans/*.md file as a new issue
 # → prints the issue URL
 
-/claude-pal:pal-implement <the-issue-number>
+/sandbox-pal:pal-implement <the-issue-number>
 # → runs preflight checks
 # → docker execs the pipeline inside the workspace (adversarial review → TDD → post-impl review → PR)
 # → prints the PR URL on success
@@ -720,11 +720,11 @@ If you're developing against a clone of the repo (sending PRs, iterating on skil
 
 ```bash
 # Clone
-git clone https://github.com/jnurre64/claude-pal.git ~/repos/claude-pal
-cd ~/repos/claude-pal
+git clone https://github.com/jnurre64/sandbox-pal.git ~/repos/sandbox-pal
+cd ~/repos/sandbox-pal
 
 # Validate the manifest (fast, no session needed)
-claude plugin validate ~/repos/claude-pal
+claude plugin validate ~/repos/sandbox-pal
 # → "✔ Validation passed"
 
 # Build the image directly (the marketplace flow does this via /pal-setup;
@@ -733,10 +733,10 @@ claude plugin validate ~/repos/claude-pal
 ./scripts/build-image.sh
 
 # Load the plugin for one session
-claude --plugin-dir ~/repos/claude-pal
+claude --plugin-dir ~/repos/sandbox-pal
 ```
 
-`--plugin-dir` is scoped to that single `claude` session. Contributors typically have the marketplace install removed (`/plugin marketplace remove claude-pal`) while iterating, to avoid two loaded copies of the plugin fighting over skill names.
+`--plugin-dir` is scoped to that single `claude` session. Contributors typically have the marketplace install removed (`/plugin marketplace remove sandbox-pal`) while iterating, to avoid two loaded copies of the plugin fighting over skill names.
 ````
 
 - [ ] **Step 3: Proofread the file**
@@ -745,7 +745,7 @@ claude --plugin-dir ~/repos/claude-pal
 less docs/install.md
 ```
 
-Check: step numbering runs 1 → 4 (not 1-2-then-4), all internal links resolve, the troubleshooting table mentions `/claude-pal:pal-workspace` not the old clone path, and the contributor section appears at the end.
+Check: step numbering runs 1 → 4 (not 1-2-then-4), all internal links resolve, the troubleshooting table mentions `/sandbox-pal:pal-workspace` not the old clone path, and the contributor section appears at the end.
 
 - [ ] **Step 4: Commit**
 
@@ -779,10 +779,10 @@ with:
 ## Getting started
 
 ```
-/plugin marketplace add jnurre64/claude-pal
-/plugin install claude-pal@claude-pal
-/claude-pal:pal-setup
-/claude-pal:pal-login
+/plugin marketplace add jnurre64/sandbox-pal
+/plugin install sandbox-pal@sandbox-pal
+/sandbox-pal:pal-setup
+/sandbox-pal:pal-login
 ```
 
 Full walkthrough in [`docs/install.md`](docs/install.md).
@@ -800,7 +800,7 @@ Replace the block at lines 47–59 (the `### One-time setup` fenced block):
 export GH_TOKEN=github_pat_<token>   # add to ~/.bashrc or ~/.zshrc
 
 # 2. Pull (or build) the image
-docker pull claude-pal:latest
+docker pull sandbox-pal:latest
 
 # 3. Start the workspace and mint Claude credentials
 /pal-setup     # creates the named volume + workspace container
@@ -819,13 +819,13 @@ with:
    ```
 2. Install the plugin from the marketplace (from any `claude` session):
    ```
-   /plugin marketplace add jnurre64/claude-pal
-   /plugin install claude-pal@claude-pal
+   /plugin marketplace add jnurre64/sandbox-pal
+   /plugin install sandbox-pal@sandbox-pal
    ```
 3. Provision the workspace and credentials:
    ```
-   /claude-pal:pal-setup     # builds the image if absent; creates the workspace
-   /claude-pal:pal-login     # interactive browser flow, run once per workspace lifetime
+   /sandbox-pal:pal-setup     # builds the image if absent; creates the workspace
+   /sandbox-pal:pal-login     # interactive browser flow, run once per workspace lifetime
    ```
 ````
 
@@ -835,7 +835,7 @@ with:
 less README.md
 ```
 
-Check: both the Getting started block and the One-time setup block reference the marketplace install path; no mention of `docker pull claude-pal:latest` remains in the user-facing flow (it's fine if it survives anywhere else as a historical note — but the One-time setup should not prescribe it).
+Check: both the Getting started block and the One-time setup block reference the marketplace install path; no mention of `docker pull sandbox-pal:latest` remains in the user-facing flow (it's fine if it survives anywhere else as a historical note — but the One-time setup should not prescribe it).
 
 - [ ] **Step 4: Commit**
 
@@ -848,7 +848,7 @@ git commit -m "docs(readme): align Getting started + One-time setup with marketp
 
 ## Task 10: Pre-merge local verification
 
-Marketplace install (`/plugin marketplace add jnurre64/claude-pal`) can only be tested *after* the PR merges into `main` — until then the manifest isn't at the URL Claude Code fetches. So this task is the pre-merge gate: manifest validity, full test suite, and (optionally) an end-to-end `/pal-setup` run against a clone via `--plugin-dir`.
+Marketplace install (`/plugin marketplace add jnurre64/sandbox-pal`) can only be tested *after* the PR merges into `main` — until then the manifest isn't at the URL Claude Code fetches. So this task is the pre-merge gate: manifest validity, full test suite, and (optionally) an end-to-end `/pal-setup` run against a clone via `--plugin-dir`.
 
 **Files:** none changed; verification only.
 
@@ -876,12 +876,12 @@ Expected: zero shellcheck warnings; every bats test passes (including the new `t
 If you have the spare ~5 minutes for a real `docker build`, exercise the new `/pal-setup` path against a clone:
 
 ```bash
-# From a fresh shell (no pre-existing claude-pal:latest image)
-docker rmi claude-pal:latest 2>/dev/null || true
+# From a fresh shell (no pre-existing sandbox-pal:latest image)
+docker rmi sandbox-pal:latest 2>/dev/null || true
 claude --plugin-dir $PWD
 ```
 
-Inside the session: `/claude-pal:pal-setup`. Expect the skill to announce the image is missing, offer to build, and on confirmation run `docker build` against `${CLAUDE_PLUGIN_ROOT}/image/Dockerfile`. Follow through to `/pal-login` + `/pal-workspace status` if you want full end-to-end coverage.
+Inside the session: `/sandbox-pal:pal-setup`. Expect the skill to announce the image is missing, offer to build, and on confirmation run `docker build` against `${CLAUDE_PLUGIN_ROOT}/image/Dockerfile`. Follow through to `/pal-login` + `/pal-workspace status` if you want full end-to-end coverage.
 
 This is optional because the unit tests in `tests/test_image.bats` already cover the decision logic; the real build just catches environment issues (Docker daemon, buildx quirks) that mocks can't.
 
@@ -890,8 +890,8 @@ This is optional because the unit tests in `tests/test_image.bats` already cover
 ```bash
 git push -u origin local-plugin-marketplace
 GH_TOKEN=$(cat ~/.config/gh-tokens/claude-pal-token) gh pr create \
-  --repo jnurre64/claude-pal \
-  --title "Distribute claude-pal via self-hosted plugin marketplace" \
+  --repo jnurre64/sandbox-pal \
+  --title "Distribute sandbox-pal via self-hosted plugin marketplace" \
   --body "Closes #19.
 
 Spec: \`docs/superpowers/specs/2026-04-23-plugin-marketplace-design.md\`
@@ -899,7 +899,7 @@ Plan: \`docs/superpowers/plans/2026-04-23-plugin-marketplace.md\`
 
 ## Summary
 - Add \`.claude-plugin/marketplace.json\` (flat layout, single plugin entry).
-- \`/pal-setup\` auto-builds \`claude-pal:latest\` via new \`lib/image.sh\` helpers (test coverage in \`tests/test_image.bats\`).
+- \`/pal-setup\` auto-builds \`sandbox-pal:latest\` via new \`lib/image.sh\` helpers (test coverage in \`tests/test_image.bats\`).
 - Rewrite \`docs/install.md\` and \`README.md\` for the marketplace flow; clone-based workflow moves to a contributor section.
 - CI \`jq\` parse check for both plugin manifests.
 
@@ -937,7 +937,7 @@ Edit `.claude-plugin/plugin.json`:
 
 ```json
 {
-  "name": "claude-pal",
+  "name": "sandbox-pal",
   "version": "<TAG-without-leading-v>",
   ...
 }
@@ -950,10 +950,10 @@ Edit `.claude-plugin/marketplace.json` — the `ref` lives INSIDE the `source` o
 ```json
   "plugins": [
     {
-      "name": "claude-pal",
+      "name": "sandbox-pal",
       "source": {
         "source": "github",
-        "repo": "jnurre64/claude-pal",
+        "repo": "jnurre64/sandbox-pal",
         "ref": "<TAG>"
       },
       ...
@@ -979,14 +979,14 @@ If the tag is `v0.6.0` (or any tag not yet in `CHANGELOG.md`), prepend a new ent
 ## [0.6.0] — <today's date>
 
 ### Added
-- **Plugin marketplace distribution.** claude-pal can now be installed with
-  `/plugin marketplace add jnurre64/claude-pal` + `/plugin install claude-pal@claude-pal`,
+- **Plugin marketplace distribution.** sandbox-pal can now be installed with
+  `/plugin marketplace add jnurre64/sandbox-pal` + `/plugin install sandbox-pal@sandbox-pal`,
   replacing the session-scoped `claude --plugin-dir` recipe.
 - `.claude-plugin/marketplace.json` (flat layout, single plugin entry pinned to the release tag).
 - `lib/image.sh` with `pal_image_exists` / `pal_image_build` / `pal_image_ensure`.
 
 ### Changed
-- `/pal-setup` now auto-builds `claude-pal:latest` if absent, using
+- `/pal-setup` now auto-builds `sandbox-pal:latest` if absent, using
   `${CLAUDE_PLUGIN_ROOT}/image/Dockerfile`. The marketplace install flow
   no longer requires a repo clone for the image build.
 - `docs/install.md` rewritten around the marketplace flow; clone workflow
@@ -1010,7 +1010,7 @@ git push
 The PR was opened in Task 10 Step 4 and has been accumulating review feedback. This release commit is typically the last before merge. Confirm reviewers are happy; request re-review if needed:
 
 ```bash
-GH_TOKEN=$(cat ~/.config/gh-tokens/claude-pal-token) gh pr view --repo jnurre64/claude-pal
+GH_TOKEN=$(cat ~/.config/gh-tokens/claude-pal-token) gh pr view --repo jnurre64/sandbox-pal
 ```
 
 ---
@@ -1050,7 +1050,7 @@ This closes the "seconds-long window" the spec warns about — `main`'s `marketp
 
 ```bash
 GH_TOKEN=$(cat ~/.config/gh-tokens/claude-pal-token) gh release create <TAG> \
-  --repo jnurre64/claude-pal \
+  --repo jnurre64/sandbox-pal \
   --title "<TAG> — plugin marketplace distribution" \
   --notes-from-tag
 ```
@@ -1059,26 +1059,26 @@ GH_TOKEN=$(cat ~/.config/gh-tokens/claude-pal-token) gh release create <TAG> \
 
 - [ ] **Step 5: End-to-end smoke test against the published tag**
 
-On a host with `claude` + `docker` installed, but where claude-pal has never been set up:
+On a host with `claude` + `docker` installed, but where sandbox-pal has never been set up:
 
 ```bash
 CLAUDE_CONFIG_DIR=$(mktemp -d)
 export CLAUDE_CONFIG_DIR
 export GH_TOKEN=<a valid fine-grained PAT>
 # Optional but recommended for a clean test: remove the image first
-docker rmi claude-pal:latest 2>/dev/null || true
+docker rmi sandbox-pal:latest 2>/dev/null || true
 claude
 ```
 
 Inside the session, run each step and verify the expected output:
 
-1. `/plugin marketplace add jnurre64/claude-pal` — expect no errors; "marketplace added".
-2. `/plugin install claude-pal@claude-pal` — expect the plugin to resolve to `<TAG>` (not `main`) and install.
-3. `/plugin` — expect `claude-pal` in the listed plugins; the version column should match `<TAG-without-leading-v>`.
+1. `/plugin marketplace add jnurre64/sandbox-pal` — expect no errors; "marketplace added".
+2. `/plugin install sandbox-pal@sandbox-pal` — expect the plugin to resolve to `<TAG>` (not `main`) and install.
+3. `/plugin` — expect `sandbox-pal` in the listed plugins; the version column should match `<TAG-without-leading-v>`.
 4. `/skills` — expect `pal-plan`, `pal-implement`, `pal-workspace`, `pal-login`, `pal-logout`, `pal-status`, `pal-logs`, `pal-cancel`, `pal-revise` all listed.
-5. `/claude-pal:pal-setup` — expect the skill to announce the image is missing and offer to build. Confirm; watch `docker build` run to completion (a few minutes the first time).
-6. `/claude-pal:pal-login` — complete the browser flow.
-7. `/claude-pal:pal-workspace status` — expect `workspace: claude-pal-workspace (running)` and `auth: present`.
+5. `/sandbox-pal:pal-setup` — expect the skill to announce the image is missing and offer to build. Confirm; watch `docker build` run to completion (a few minutes the first time).
+6. `/sandbox-pal:pal-login` — complete the browser flow.
+7. `/sandbox-pal:pal-workspace status` — expect `workspace: sandbox-pal-workspace (running)` and `auth: present`.
 
 If any step fails, **do not close issue #19.** Instead: fix the bug on a follow-up branch, re-release with a patch version (e.g. `<TAG>.1`), and re-run this smoke test. The bad tag stays (tags are immutable conventionally); users can bypass by reinstalling or running `/plugin marketplace update`.
 
@@ -1086,8 +1086,8 @@ If any step fails, **do not close issue #19.** Instead: fix the bug on a follow-
 
 ```bash
 # Inside the smoke-test session or on the host:
-docker stop claude-pal-workspace && docker rm claude-pal-workspace
-docker volume rm claude-pal-claude
+docker stop sandbox-pal-workspace && docker rm sandbox-pal-workspace
+docker volume rm sandbox-pal-claude
 rm -rf "$CLAUDE_CONFIG_DIR"
 ```
 
@@ -1095,8 +1095,8 @@ rm -rf "$CLAUDE_CONFIG_DIR"
 
 ```bash
 GH_TOKEN=$(cat ~/.config/gh-tokens/claude-pal-token) gh issue close 19 \
-  --repo jnurre64/claude-pal \
-  --comment "Shipped in <TAG>: https://github.com/jnurre64/claude-pal/releases/tag/<TAG>"
+  --repo jnurre64/sandbox-pal \
+  --comment "Shipped in <TAG>: https://github.com/jnurre64/sandbox-pal/releases/tag/<TAG>"
 ```
 
 ---
@@ -1110,7 +1110,7 @@ GH_TOKEN=$(cat ~/.config/gh-tokens/claude-pal-token) gh issue close 19 \
 - `README.md` "Getting started" and "One-time setup" both reference the marketplace install.
 - CI (`.github/workflows/ci.yml`) runs `jq -e` against both manifest files on every push / PR.
 - Post-merge marketplace smoke test (Task 12 Step 5) passes on a clean `CLAUDE_CONFIG_DIR`: `/plugin marketplace add` → `/plugin install` → `/pal-setup` → `/pal-login` → `/pal-workspace status` all succeed.
-- `https://github.com/jnurre64/claude-pal/releases/tag/<TAG>` exists and issue #19 is closed with a link to the release.
+- `https://github.com/jnurre64/sandbox-pal/releases/tag/<TAG>` exists and issue #19 is closed with a link to the release.
 
 ---
 

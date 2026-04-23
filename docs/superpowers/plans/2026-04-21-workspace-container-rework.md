@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace claude-pal's ephemeral `docker run --rm` + `CLAUDE_CODE_OAUTH_TOKEN` env-passthrough model with a long-running workspace container that mints credentials via `claude /login` inside the container (Anthropic `.devcontainer` pattern). Drop the OAuth-token path entirely, add per-run host→container memory sync, add a managed container-level `CLAUDE.md`, and update all documentation.
+**Goal:** Replace sandbox-pal's ephemeral `docker run --rm` + `CLAUDE_CODE_OAUTH_TOKEN` env-passthrough model with a long-running workspace container that mints credentials via `claude /login` inside the container (Anthropic `.devcontainer` pattern). Drop the OAuth-token path entirely, add per-run host→container memory sync, add a managed container-level `CLAUDE.md`, and update all documentation.
 
-**Architecture:** A single named container (`claude-pal-workspace`) is started once on `/pal-setup`, has credentials minted inside it via `/pal-login`, and keeps them in a Docker-managed named volume (`claude-pal-claude`). Every `pal-*` invocation auto-starts the workspace if stopped, then `docker exec`s in. The entrypoint splits: `workspace-boot.sh` (one-shot: firewall setup + `sleep infinity`) and `run-pipeline.sh` (per-run: clone + pipeline). Before each exec, the launcher syncs memory markdown from the host's `~/.claude/projects/<host-slug>/memory/` and a container-scoped CLAUDE.md (`~/.config/claude-pal/container-CLAUDE.md`) into the container.
+**Architecture:** A single named container (`sandbox-pal-workspace`) is started once on `/pal-setup`, has credentials minted inside it via `/pal-login`, and keeps them in a Docker-managed named volume (`sandbox-pal-claude`). Every `pal-*` invocation auto-starts the workspace if stopped, then `docker exec`s in. The entrypoint splits: `workspace-boot.sh` (one-shot: firewall setup + `sleep infinity`) and `run-pipeline.sh` (per-run: clone + pipeline). Before each exec, the launcher syncs memory markdown from the host's `~/.claude/projects/<host-slug>/memory/` and a container-scoped CLAUDE.md (`~/.config/sandbox-pal/container-CLAUDE.md`) into the container.
 
 **Tech Stack:** Bash, Docker CLI, Ubuntu 24.04 base, iptables + ipset firewall, BATS-Core for tests, `shellcheck` for lint. Claude Code plugin architecture with `${CLAUDE_PLUGIN_ROOT}`.
 
-**Spec:** `docs/superpowers/specs/2026-04-21-claude-pal-auth-rework.md`
+**Spec:** `docs/superpowers/specs/2026-04-21-sandbox-pal-auth-rework.md`
 
-**Supersedes:** `docs/superpowers/plans/2026-04-18-claude-pal.md` (implementation details; pipeline contract and review-gate prompts stay).
+**Supersedes:** `docs/superpowers/plans/2026-04-18-sandbox-pal.md` (implementation details; pipeline contract and review-gate prompts stay).
 
 ---
 
@@ -20,7 +20,7 @@
 
 - `lib/workspace.sh` — host-side workspace lifecycle: `pal_workspace_start`, `pal_workspace_stop`, `pal_workspace_restart`, `pal_workspace_status`, `pal_workspace_ensure_running`, `pal_workspace_is_authenticated`.
 - `lib/memory-sync.sh` — host-side memory sync: `pal_memory_sync_to_container` (computes host and container slugs, rsyncs memory markdown excluding `*.jsonl`, preserves subdir).
-- `lib/container-rules.sh` — host-side management of `~/.config/claude-pal/container-CLAUDE.md`: `pal_container_rules_path`, `pal_container_rules_ensure`, `pal_container_rules_sync_to_container`, `pal_container_rules_edit`.
+- `lib/container-rules.sh` — host-side management of `~/.config/sandbox-pal/container-CLAUDE.md`: `pal_container_rules_path`, `pal_container_rules_ensure`, `pal_container_rules_sync_to_container`, `pal_container_rules_edit`.
 - `image/opt/pal/workspace-boot.sh` — container-side one-shot boot: program firewall from `allowlist.yaml`, run verification assertion (deny works), then `sleep infinity`.
 - `image/opt/pal/run-pipeline.sh` — container-side per-run pipeline: clone, fetch context, run review gates, implement, post-review, push, PR. (Factored from today's `entrypoint.sh`.)
 - `skills/pal-workspace/SKILL.md` — operator skill: `start | stop | restart | status | edit-rules` subcommands.
@@ -38,7 +38,7 @@
 - `image/Dockerfile` — rebased on Anthropic-devcontainer layout: non-root `agent` user, named-volume mount point at `/home/agent/.claude/`, minimal default-deny firewall setup. Keep `CMD` overridable; default to `/opt/pal/workspace-boot.sh`.
 - `image/opt/pal/entrypoint.sh` — **deleted** (replaced by `workspace-boot.sh` + `run-pipeline.sh`).
 - `image/opt/pal/lib/firewall.sh` — minor: called once from `workspace-boot.sh`; add the Anthropic-style "try reaching non-allowlisted host, assert fails" verification step; move re-resolution of `allowlist.yaml` to boot time.
-- `lib/config.sh` — drop `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` checks. Keep `GH_TOKEN`. Add optional reads for `PAL_SYNC_MEMORIES`, `PAL_SYNC_TRANSCRIPTS`, `PAL_CPUS`, `PAL_MEMORY` from `~/.config/claude-pal/config.env`.
+- `lib/config.sh` — drop `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` checks. Keep `GH_TOKEN`. Add optional reads for `PAL_SYNC_MEMORIES`, `PAL_SYNC_TRANSCRIPTS`, `PAL_CPUS`, `PAL_MEMORY` from `~/.config/sandbox-pal/config.env`.
 - `lib/preflight.sh` — replace `pal_preflight_single_auth_method` with `pal_preflight_workspace_ready` (workspace container exists, is running or can auto-start, and `/home/agent/.claude/.credentials.json` exists inside).
 - `lib/launcher.sh` — switch `pal_launch_sync` / `pal_launch_async` from `docker run --rm` to `docker exec` against the workspace container; memory + rules sync before exec; remove Claude env-var forwarding; keep `GH_TOKEN` and `AGENT_*` env vars.
 - `skills/pal-implement/SKILL.md`, `skills/pal-revise/SKILL.md` — source `lib/workspace.sh`, `lib/memory-sync.sh`, `lib/container-rules.sh`; call `pal_workspace_ensure_running`, sync memory + rules, then launch.
@@ -50,8 +50,8 @@
 - `UPSTREAM.md` — unchanged content, but verify no stale references.
 - `CHANGELOG.md` — minor-version bump entry (`0.X` → `0.(X+1)`).
 - `docs/install.md` — rewrite to match new flow.
-- `docs/superpowers/plans/2026-04-18-claude-pal.md` — add a `superseded_by` note at the top.
-- `docs/superpowers/specs/2026-04-18-claude-pal-design.md` — insert inline "SUPERSEDED BY 2026-04-21 rework" markers at §3, §5.2, §5.6, §6.1, §6.2, §9.3 with a pointer to the new spec.
+- `docs/superpowers/plans/2026-04-18-sandbox-pal.md` — add a `superseded_by` note at the top.
+- `docs/superpowers/specs/2026-04-18-sandbox-pal-design.md` — insert inline "SUPERSEDED BY 2026-04-21 rework" markers at §3, §5.2, §5.6, §6.1, §6.2, §9.3 with a pointer to the new spec.
 
 ---
 
@@ -61,7 +61,7 @@
 2. **Host-side lifecycle library** — `lib/workspace.sh` with start/stop/restart/status/ensure-running/is-authenticated.
 3. **Config + preflight rework** — drop Claude env-var auth from `lib/config.sh`; replace auth preflight with workspace-ready preflight.
 4. **Memory sync library** — `lib/memory-sync.sh`, host-slug / container-slug computation, `*.jsonl` exclusion.
-5. **Container-rules library** — `lib/container-rules.sh`, manages `~/.config/claude-pal/container-CLAUDE.md`.
+5. **Container-rules library** — `lib/container-rules.sh`, manages `~/.config/sandbox-pal/container-CLAUDE.md`.
 6. **Launcher rework** — switch from `docker run --rm` to `docker exec`; memory + rules sync before exec.
 7. **Skills: pal-workspace, pal-login, pal-logout** — new operator skills.
 8. **Skills: pal-setup rewrite** — new setup flow.
@@ -103,7 +103,7 @@ echo "$*" >> "$FAKE_DOCKER_LOG"
 case "$1" in
     ps)
         if [ -f "$FAKE_DOCKER_STATE/running" ]; then
-            echo "claude-pal-workspace"
+            echo "sandbox-pal-workspace"
         fi
         ;;
     inspect)
@@ -374,12 +374,12 @@ CMD ["/opt/pal/workspace-boot.sh"]
 
 - [ ] **Step 3: Build the image locally**
 
-Run: `docker build -t claude-pal:dev -f image/Dockerfile .`
+Run: `docker build -t sandbox-pal:dev -f image/Dockerfile .`
 Expected: build succeeds.
 
 - [ ] **Step 4: Run the image-smoke test from Task 1.2**
 
-Run: `IMAGE_TAG=claude-pal:dev bats tests/test_image_smoke.bats`
+Run: `IMAGE_TAG=sandbox-pal:dev bats tests/test_image_smoke.bats`
 Expected: previously failing `workspace-boot` tests now pass. Other image tests still pass.
 
 - [ ] **Step 5: Delete the old entrypoint.sh**
@@ -463,9 +463,9 @@ teardown() {
     fake_docker_set_absent
     run pal_workspace_start
     assert_success
-    run grep "volume create claude-pal-claude" "$FAKE_DOCKER_LOG"
+    run grep "volume create sandbox-pal-claude" "$FAKE_DOCKER_LOG"
     assert_success
-    run grep "run -d --name claude-pal-workspace" "$FAKE_DOCKER_LOG"
+    run grep "run -d --name sandbox-pal-workspace" "$FAKE_DOCKER_LOG"
     assert_success
     run grep "cap-add NET_ADMIN" "$FAKE_DOCKER_LOG"
     assert_success
@@ -485,7 +485,7 @@ teardown() {
     fake_docker_set_stopped
     run pal_workspace_start
     assert_success
-    run grep "^start claude-pal-workspace" "$FAKE_DOCKER_LOG"
+    run grep "^start sandbox-pal-workspace" "$FAKE_DOCKER_LOG"
     assert_success
 }
 
@@ -522,11 +522,11 @@ git commit -m "test: add lifecycle tests for pal_workspace_start (failing)"
 ```bash
 # lib/workspace.sh
 # shellcheck shell=bash
-# Host-side lifecycle for the long-running claude-pal workspace container.
+# Host-side lifecycle for the long-running sandbox-pal workspace container.
 
-: "${PAL_WORKSPACE_NAME:=claude-pal-workspace}"
-: "${PAL_WORKSPACE_VOLUME:=claude-pal-claude}"
-: "${PAL_WORKSPACE_IMAGE:=claude-pal:latest}"
+: "${PAL_WORKSPACE_NAME:=sandbox-pal-workspace}"
+: "${PAL_WORKSPACE_VOLUME:=sandbox-pal-claude}"
+: "${PAL_WORKSPACE_IMAGE:=sandbox-pal:latest}"
 
 _pal_workspace_exists() {
     docker inspect "$PAL_WORKSPACE_NAME" >/dev/null 2>&1
@@ -590,7 +590,7 @@ git commit -m "feat(lib): add pal_workspace_start with cpu/memory caps"
     fake_docker_set_running
     run pal_workspace_stop
     assert_success
-    run grep "^stop claude-pal-workspace" "$FAKE_DOCKER_LOG"
+    run grep "^stop sandbox-pal-workspace" "$FAKE_DOCKER_LOG"
     assert_success
 }
 
@@ -606,9 +606,9 @@ git commit -m "feat(lib): add pal_workspace_start with cpu/memory caps"
     fake_docker_set_running
     run pal_workspace_restart
     assert_success
-    run grep "^stop claude-pal-workspace" "$FAKE_DOCKER_LOG"
+    run grep "^stop sandbox-pal-workspace" "$FAKE_DOCKER_LOG"
     assert_success
-    run grep "^start claude-pal-workspace" "$FAKE_DOCKER_LOG"
+    run grep "^start sandbox-pal-workspace" "$FAKE_DOCKER_LOG"
     assert_success
 }
 
@@ -644,7 +644,7 @@ git commit -m "feat(lib): add pal_workspace_start with cpu/memory caps"
     fake_docker_set_running
     run pal_workspace_status
     assert_success
-    assert_output --partial "claude-pal-workspace"
+    assert_output --partial "sandbox-pal-workspace"
     assert_output --partial "running"
 }
 ```
@@ -753,10 +753,10 @@ git commit -m "feat(lib): add workspace stop/restart/status/ensure-running/is-au
     refute_output --partial "CLAUDE_CODE_OAUTH_TOKEN"
 }
 
-@test "pal_load_config sources ~/.config/claude-pal/config.env when present" {
+@test "pal_load_config sources ~/.config/sandbox-pal/config.env when present" {
     export HOME="$BATS_TEST_TMPDIR"
-    mkdir -p "$HOME/.config/claude-pal"
-    cat > "$HOME/.config/claude-pal/config.env" <<EOF
+    mkdir -p "$HOME/.config/sandbox-pal"
+    cat > "$HOME/.config/sandbox-pal/config.env" <<EOF
 PAL_CPUS=2.0
 PAL_MEMORY=4g
 PAL_SYNC_MEMORIES=false
@@ -791,14 +791,14 @@ git commit -m "test: config drops Claude env vars and reads config.env knobs (fa
 ```bash
 # lib/config.sh
 # shellcheck shell=bash
-# claude-pal host-side config loader.
+# sandbox-pal host-side config loader.
 #
 # Credentials: GH_TOKEN (required) is env-passthrough. Claude credentials are
 # NOT env-passthrough — they are minted inside the workspace container via
-# `claude /login`, persisted in the named volume `claude-pal-claude`, and
+# `claude /login`, persisted in the named volume `sandbox-pal-claude`, and
 # never touch the host shell.
 #
-# Optional non-secret knobs live in ~/.config/claude-pal/config.env:
+# Optional non-secret knobs live in ~/.config/sandbox-pal/config.env:
 #   PAL_SYNC_MEMORIES     (default true)
 #   PAL_SYNC_TRANSCRIPTS  (default false — *.jsonl are secret-tier)
 #   PAL_CPUS              (default unset = uncapped)
@@ -807,7 +807,7 @@ git commit -m "test: config drops Claude env vars and reads config.env knobs (fa
 pal_load_config() {
     GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 
-    local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/claude-pal/config.env"
+    local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/sandbox-pal/config.env"
     if [ -f "$cfg" ]; then
         # shellcheck disable=SC1090
         . "$cfg"
@@ -966,9 +966,9 @@ teardown() {
 }
 
 @test "pal_memory_slug encodes / as -" {
-    run pal_memory_slug /home/jonny/repos/claude-pal
+    run pal_memory_slug /home/jonny/repos/sandbox-pal
     assert_success
-    assert_output "-home-jonny-repos-claude-pal"
+    assert_output "-home-jonny-repos-sandbox-pal"
 }
 
 @test "pal_memory_slug encodes nested path" {
@@ -1049,7 +1049,7 @@ git commit -m "feat(lib): add pal_memory_slug host-path encoder"
     # payload (inspect FAKE_DOCKER_LOG).
     run grep -E 'exec.*rm -rf /home/agent/.claude/projects/-home-agent-work-run-1/memory' "$FAKE_DOCKER_LOG"
     assert_success
-    run grep -E 'cp .* claude-pal-workspace:/home/agent/.claude/projects/-home-agent-work-run-1/memory' "$FAKE_DOCKER_LOG"
+    run grep -E 'cp .* sandbox-pal-workspace:/home/agent/.claude/projects/-home-agent-work-run-1/memory' "$FAKE_DOCKER_LOG"
     assert_success
 }
 
@@ -1183,21 +1183,21 @@ teardown() {
 @test "pal_container_rules_path respects XDG_CONFIG_HOME" {
     XDG_CONFIG_HOME="$HOME/xdg" run pal_container_rules_path
     assert_success
-    assert_output "$HOME/xdg/claude-pal/container-CLAUDE.md"
+    assert_output "$HOME/xdg/sandbox-pal/container-CLAUDE.md"
 }
 
 @test "pal_container_rules_path falls back to ~/.config" {
     unset XDG_CONFIG_HOME
     run pal_container_rules_path
     assert_success
-    assert_output "$HOME/.config/claude-pal/container-CLAUDE.md"
+    assert_output "$HOME/.config/sandbox-pal/container-CLAUDE.md"
 }
 
 @test "pal_container_rules_ensure creates empty file when missing" {
     run pal_container_rules_ensure
     assert_success
-    [ -f "$HOME/.config/claude-pal/container-CLAUDE.md" ]
-    run cat "$HOME/.config/claude-pal/container-CLAUDE.md"
+    [ -f "$HOME/.config/sandbox-pal/container-CLAUDE.md" ]
+    run cat "$HOME/.config/sandbox-pal/container-CLAUDE.md"
     assert_output ""
 }
 
@@ -1205,10 +1205,10 @@ teardown() {
     fake_docker_set_running
     pal_container_rules_ensure
     echo "do not run destructive commands" \
-        > "$HOME/.config/claude-pal/container-CLAUDE.md"
+        > "$HOME/.config/sandbox-pal/container-CLAUDE.md"
     run pal_container_rules_sync_to_container
     assert_success
-    run grep "cp .*container-CLAUDE.md claude-pal-workspace:/home/agent/.claude/CLAUDE.md" "$FAKE_DOCKER_LOG"
+    run grep "cp .*container-CLAUDE.md sandbox-pal-workspace:/home/agent/.claude/CLAUDE.md" "$FAKE_DOCKER_LOG"
     assert_success
 }
 ```
@@ -1238,7 +1238,7 @@ git commit -m "test: container-rules file management + sync (failing)"
 
 pal_container_rules_path() {
     local base="${XDG_CONFIG_HOME:-$HOME/.config}"
-    printf '%s/claude-pal/container-CLAUDE.md\n' "$base"
+    printf '%s/sandbox-pal/container-CLAUDE.md\n' "$base"
 }
 
 pal_container_rules_ensure() {
@@ -1314,7 +1314,7 @@ Record: `pal_launch_sync`, `pal_launch_async`, `pal_cancel_run`, `pal_render_sta
     run grep -- "^run -d" "$FAKE_DOCKER_LOG"
     assert_failure   # must NOT be using `docker run` anymore
 
-    run grep -- "^exec .*claude-pal-workspace.*run-pipeline.sh implement owner/repo 42" "$FAKE_DOCKER_LOG"
+    run grep -- "^exec .*sandbox-pal-workspace.*run-pipeline.sh implement owner/repo 42" "$FAKE_DOCKER_LOG"
     assert_success
 
     run grep -- "^cp .*container-CLAUDE.md" "$FAKE_DOCKER_LOG"
@@ -1419,7 +1419,7 @@ git commit -m "feat(lib): launcher uses docker exec against workspace container;
 ```markdown
 ---
 name: pal-workspace
-description: Manage the claude-pal workspace container (start, stop, restart, status, edit-rules).
+description: Manage the sandbox-pal workspace container (start, stop, restart, status, edit-rules).
 ---
 
 # pal-workspace
@@ -1430,7 +1430,7 @@ Subcommands:
 - `stop`       — graceful stop
 - `restart`    — stop + start
 - `status`     — print container state + auth state
-- `edit-rules` — open `$EDITOR` on `~/.config/claude-pal/container-CLAUDE.md`
+- `edit-rules` — open `$EDITOR` on `~/.config/sandbox-pal/container-CLAUDE.md`
 
 ```bash
 set -euo pipefail
@@ -1463,9 +1463,9 @@ esac
 - [ ] **Step 2: Slash-command prompt**
 
 ```markdown
-# /claude-pal:pal-workspace
+# /sandbox-pal:pal-workspace
 
-Manage the long-running claude-pal workspace container.
+Manage the long-running sandbox-pal workspace container.
 
 Usage: `/pal-workspace [start|stop|restart|status|edit-rules]`
 
@@ -1484,7 +1484,7 @@ Invoke the `pal-workspace` skill.
     # (or adapt to however other skill-smoke tests run — e.g. extracting the
     # bash block and sourcing it; mirror test_skill_pal_implement.bats.)
     assert_success
-    assert_output --partial "claude-pal-workspace"
+    assert_output --partial "sandbox-pal-workspace"
 }
 ```
 
@@ -1533,13 +1533,13 @@ docker exec -it "$PAL_WORKSPACE_NAME" claude /login
 - [ ] **Step 2: Command prompt**
 
 ```markdown
-# /claude-pal:pal-login
+# /sandbox-pal:pal-login
 
 Mint Claude credentials inside the workspace container.
 
 This opens an interactive `claude /login` flow (browser dance). Run once per
 workspace lifetime; credentials persist in the Docker-managed named volume
-`claude-pal-claude` until you run `/pal-logout` or delete the volume.
+`sandbox-pal-claude` until you run `/pal-logout` or delete the volume.
 
 Invoke the `pal-login` skill.
 ```
@@ -1607,9 +1607,9 @@ git commit -m "feat(skills): add /pal-logout"
 - [ ] **Step 1: Replace file content**
 
 ```markdown
-# /claude-pal:pal-setup
+# /sandbox-pal:pal-setup
 
-Guided, one-time setup for claude-pal.
+Guided, one-time setup for sandbox-pal.
 
 Walk the user through:
 
@@ -1619,16 +1619,16 @@ Walk the user through:
        echo 'export GH_TOKEN=github_pat_<token>' >> ~/.bashrc
        source ~/.bashrc
    The PAT needs `Contents`, `Pull requests`, `Issues` (read/write) on target repos.
-3. `docker pull claude-pal:latest`  (or build locally from `image/`).
+3. `docker pull sandbox-pal:latest`  (or build locally from `image/`).
 4. Run `/pal-workspace start` — creates the named volume and the long-running
    workspace container.
 5. Run `/pal-login` — mints Claude credentials inside the workspace (one-time
-   interactive browser flow). Credentials persist in the `claude-pal-claude`
+   interactive browser flow). Credentials persist in the `sandbox-pal-claude`
    named volume; they never touch the host filesystem.
 6. (Optional) `/pal-workspace edit-rules` — opens an empty
-   `~/.config/claude-pal/container-CLAUDE.md` that will be synced into the
+   `~/.config/sandbox-pal/container-CLAUDE.md` that will be synced into the
    container on every run. Use it for container-scoped behavior rules.
-7. (Optional) create `~/.config/claude-pal/config.env` with non-secret knobs:
+7. (Optional) create `~/.config/sandbox-pal/config.env` with non-secret knobs:
        PAL_CPUS=2.0
        PAL_MEMORY=4g
        PAL_SYNC_MEMORIES=true
@@ -1751,15 +1751,15 @@ This phase is a REQUIREMENT of the spec (§7). Every doc listed here must be tou
 ```markdown
 ## Authentication model
 
-claude-pal uses a **long-running workspace container** that owns its own Claude
+sandbox-pal uses a **long-running workspace container** that owns its own Claude
 credentials. `claude /login` is run interactively **inside** the container
 once; the resulting `.credentials.json` persists in a Docker-managed named
-volume (`claude-pal-claude`) and never touches the host filesystem. Every
+volume (`sandbox-pal-claude`) and never touches the host filesystem. Every
 `pal-*` invocation `docker exec`s into the workspace.
 
 The host shell only needs `GH_TOKEN` (or `GITHUB_TOKEN`) — there is **no**
 `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` env-var path. `lib/config.sh`
-asserts `GH_TOKEN` and optionally sources `~/.config/claude-pal/config.env` for
+asserts `GH_TOKEN` and optionally sources `~/.config/sandbox-pal/config.env` for
 non-secret knobs (`PAL_CPUS`, `PAL_MEMORY`, `PAL_SYNC_MEMORIES`,
 `PAL_SYNC_TRANSCRIPTS`).
 
@@ -1784,7 +1784,7 @@ git commit -m "docs: CLAUDE.md describes workspace-container auth model"
 ```markdown
 ## Authentication
 
-claude-pal uses a **long-running workspace container**. Claude credentials are
+sandbox-pal uses a **long-running workspace container**. Claude credentials are
 minted inside the container via `claude /login` and persisted in a
 Docker-managed named volume — they never touch the host filesystem.
 
@@ -1797,7 +1797,7 @@ Only `GH_TOKEN` lives in your host shell.
 export GH_TOKEN=github_pat_<token>   # add to ~/.bashrc or ~/.zshrc
 
 # 2. Pull (or build) the image
-docker pull claude-pal:latest
+docker pull sandbox-pal:latest
 
 # 3. Start the workspace and mint Claude credentials
 /pal-setup     # creates the named volume + workspace container
@@ -1806,7 +1806,7 @@ docker pull claude-pal:latest
 
 ### Resource caps (optional)
 
-Knobs in `~/.config/claude-pal/config.env`:
+Knobs in `~/.config/sandbox-pal/config.env`:
 
     PAL_CPUS=2.0
     PAL_MEMORY=4g
@@ -1846,7 +1846,7 @@ git commit -m "docs(readme): rewrite auth + setup for workspace-container model"
 Replace any `setup-token` / `CLAUDE_CODE_OAUTH_TOKEN` content with the `/pal-setup` + `/pal-login` flow. Explicitly call out:
 - Required Docker version.
 - `GH_TOKEN` scopes.
-- Where the named volume lives (`docker volume inspect claude-pal-claude`).
+- Where the named volume lives (`docker volume inspect sandbox-pal-claude`).
 - Troubleshooting: `/pal-workspace status` first stop.
 
 - [ ] **Step 2: Commit**
@@ -1875,7 +1875,7 @@ Single source of truth for the new auth model. Sections:
 Cross-link:
 - `https://code.claude.com/docs/en/legal-and-compliance`
 - `https://github.com/anthropics/claude-code/tree/main/.devcontainer`
-- `docs/superpowers/specs/2026-04-21-claude-pal-auth-rework.md`
+- `docs/superpowers/specs/2026-04-21-sandbox-pal-auth-rework.md`
 
 - [ ] **Step 2: Commit**
 
@@ -1905,7 +1905,7 @@ git commit -m "docs(skills): remove stale env-auth / ephemeral language"
 ### Task 10.6: Mark old plan superseded
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-04-18-claude-pal.md`
+- Modify: `docs/superpowers/plans/2026-04-18-sandbox-pal.md`
 
 - [ ] **Step 1: Add a note at the top (above the H1)**
 
@@ -1916,25 +1916,25 @@ git commit -m "docs(skills): remove stale env-auth / ephemeral language"
 - [ ] **Step 2: Commit**
 
 ```bash
-git add docs/superpowers/plans/2026-04-18-claude-pal.md
+git add docs/superpowers/plans/2026-04-18-sandbox-pal.md
 git commit -m "docs(plan): mark 2026-04-18 plan superseded"
 ```
 
 ### Task 10.7: Insert supersede markers into original spec
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-04-18-claude-pal-design.md`
+- Modify: `docs/superpowers/specs/2026-04-18-sandbox-pal-design.md`
 
 - [ ] **Step 1: For each of §3, §5.2, §5.6, §6.1, §6.2, §9.3, insert a pointer at the top of that section**
 
 ```markdown
-> **SUPERSEDED** (2026-04-21): See `docs/superpowers/specs/2026-04-21-claude-pal-auth-rework.md` — §N. Content below is preserved for history.
+> **SUPERSEDED** (2026-04-21): See `docs/superpowers/specs/2026-04-21-sandbox-pal-auth-rework.md` — §N. Content below is preserved for history.
 ```
 
 - [ ] **Step 2: Commit**
 
 ```bash
-git add docs/superpowers/specs/2026-04-18-claude-pal-design.md
+git add docs/superpowers/specs/2026-04-18-sandbox-pal-design.md
 git commit -m "docs(spec): insert supersede markers in original design doc"
 ```
 
@@ -1949,10 +1949,10 @@ git commit -m "docs(spec): insert supersede markers in original design doc"
 ## [0.(X+1).0] — 2026-04-21
 
 ### Changed
-- **BREAKING (pre-1.0):** Ephemeral `docker run --rm` + `CLAUDE_CODE_OAUTH_TOKEN` env-passthrough replaced by a long-running workspace container (`claude-pal-workspace`) with in-container `/login`. See `docs/authentication.md`.
+- **BREAKING (pre-1.0):** Ephemeral `docker run --rm` + `CLAUDE_CODE_OAUTH_TOKEN` env-passthrough replaced by a long-running workspace container (`sandbox-pal-workspace`) with in-container `/login`. See `docs/authentication.md`.
 - `lib/config.sh` no longer reads `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`. `GH_TOKEN` is the only required host env var.
 - Per-run host → container memory sync (`~/.claude/projects/<slug>/memory/` → workspace). Markdown only; `*.jsonl` excluded by default (secret-tier).
-- Container-scoped `CLAUDE.md` via `~/.config/claude-pal/container-CLAUDE.md`; synced per run.
+- Container-scoped `CLAUDE.md` via `~/.config/sandbox-pal/container-CLAUDE.md`; synced per run.
 - New optional knobs: `PAL_CPUS`, `PAL_MEMORY`, `PAL_SYNC_MEMORIES`, `PAL_SYNC_TRANSCRIPTS`.
 
 ### Added
@@ -2025,7 +2025,7 @@ git push -u origin feat/workspace-container-rework
 Title: `feat: workspace-container rework — drop OAuth env, `/login` inside container, memory sync`
 
 Body cross-links:
-- `docs/superpowers/specs/2026-04-21-claude-pal-auth-rework.md`
+- `docs/superpowers/specs/2026-04-21-sandbox-pal-auth-rework.md`
 - `docs/superpowers/plans/2026-04-21-workspace-container-rework.md`
 - `docs/authentication.md`
 

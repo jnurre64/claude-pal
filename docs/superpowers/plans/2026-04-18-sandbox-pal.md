@@ -1,10 +1,10 @@
 > **SUPERSEDED** (2026-04-21): The container-lifecycle and authentication sections of this plan are superseded by `docs/superpowers/plans/2026-04-21-workspace-container-rework.md`. Pipeline-contract and review-gate tasks below remain authoritative.
 
-# claude-pal v1 Implementation Plan
+# sandbox-pal v1 Implementation Plan
 
 > **For agentic workers:** Use `superpowers:executing-plans` with **one Claude Code session per phase**. Each phase ends with a testable milestone that acts as a review checkpoint. Within phases where tasks are independent, `superpowers:dispatching-parallel-agents` can fan out to subagents — see "Execution strategy" below. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship v1 of `claude-pal` — a Claude Code skill set + Docker container that publishes implementation plans to GitHub issues and runs a gated pipeline (adversarial plan review → TDD implementation → post-impl review → retry → PR) inside an ephemeral Linux container.
+**Goal:** Ship v1 of `sandbox-pal` — a Claude Code skill set + Docker container that publishes implementation plans to GitHub issues and runs a gated pipeline (adversarial plan review → TDD implementation → post-impl review → retry → PR) inside an ephemeral Linux container.
 
 **Architecture:** Host-side Claude Code skills (bash, Git Bash on Windows) read a user-owned `config.env`, run preflight checks, and invoke `docker run` against a purpose-built Ubuntu image. The container runs a bash entrypoint that orchestrates 3–5 `claude -p` calls (different tool allowlists per phase) with the review-gate prompts vendored from `jnurre64/claude-agent-dispatch`. Communication between host and container is one-directional: host → container via env vars + bind-mounted `/status` directory; container → host via `/status/status.json` and `/status/log`. Async mode adds a forked watcher that fires a desktop notification on container exit.
 
@@ -12,9 +12,9 @@
 
 **Tech Stack:** Bash 5+, Docker 20+ (Linux containers mode), Claude Code CLI (headless `claude -p`), GitHub CLI (`gh`), `jq`, BATS-Core for testing, Ubuntu 24.04 base image, `notify-send` / `osascript` / BurntToast for cross-platform notifications.
 
-**Repo location:** The `claude-pal` repo lives at `~/repos/claude-pal/` (under the host's existing `~/repos/` directory alongside other project checkouts). Phase 1 Task 1.1 originally created it at `~/claude-pal/`; that was moved to `~/repos/claude-pal/` during Phase 1 execution. All path references in this plan have been updated to the canonical `~/repos/claude-pal/`. The plan itself now lives at `docs/superpowers/plans/2026-04-18-claude-pal.md` inside that repo.
+**Repo location:** The `sandbox-pal` repo lives at `~/repos/sandbox-pal/` (under the host's existing `~/repos/` directory alongside other project checkouts). Phase 1 Task 1.1 originally created it at `~/sandbox-pal/`; that was moved to `~/repos/sandbox-pal/` during Phase 1 execution. All path references in this plan have been updated to the canonical `~/repos/sandbox-pal/`. The plan itself now lives at `docs/superpowers/plans/2026-04-18-sandbox-pal.md` inside that repo.
 
-**Spec:** See `docs/superpowers/specs/2026-04-18-claude-pal-design.md` in this repo for the full design document. All design decisions referenced below are justified there.
+**Spec:** See `docs/superpowers/specs/2026-04-18-sandbox-pal-design.md` in this repo for the full design document. All design decisions referenced below are justified there.
 
 ---
 
@@ -68,19 +68,19 @@ This keeps each session's context focused, preserves a natural review checkpoint
 ### Task 1.1: Initialize repository and baseline files
 
 **Files:**
-- Create: `~/repos/claude-pal/` (new directory + git repo)
-- Create: `~/repos/claude-pal/README.md`
-- Create: `~/repos/claude-pal/LICENSE`
-- Create: `~/repos/claude-pal/.gitignore`
-- Create: `~/repos/claude-pal/CLAUDE.md`
-- Move: `/home/jonny/claude-pal-design.md` → `~/repos/claude-pal/docs/superpowers/specs/2026-04-18-claude-pal-design.md`
-- Move: `/home/jonny/claude-pal-plan.md` → `~/repos/claude-pal/docs/superpowers/plans/2026-04-18-claude-pal.md`
+- Create: `~/repos/sandbox-pal/` (new directory + git repo)
+- Create: `~/repos/sandbox-pal/README.md`
+- Create: `~/repos/sandbox-pal/LICENSE`
+- Create: `~/repos/sandbox-pal/.gitignore`
+- Create: `~/repos/sandbox-pal/CLAUDE.md`
+- Move: `/home/jonny/sandbox-pal-design.md` → `~/repos/sandbox-pal/docs/superpowers/specs/2026-04-18-sandbox-pal-design.md`
+- Move: `/home/jonny/sandbox-pal-plan.md` → `~/repos/sandbox-pal/docs/superpowers/plans/2026-04-18-sandbox-pal.md`
 
 - [ ] **Step 1: Create directory and initialize git**
 
 ```bash
-mkdir -p ~/repos/claude-pal/docs/superpowers/{specs,plans}
-cd ~/repos/claude-pal
+mkdir -p ~/repos/sandbox-pal/docs/superpowers/{specs,plans}
+cd ~/repos/sandbox-pal
 git init
 git branch -M main
 ```
@@ -88,8 +88,8 @@ git branch -M main
 - [ ] **Step 2: Move spec and plan into the repo**
 
 ```bash
-mv /home/jonny/claude-pal-design.md ~/repos/claude-pal/docs/superpowers/specs/2026-04-18-claude-pal-design.md
-mv /home/jonny/claude-pal-plan.md ~/repos/claude-pal/docs/superpowers/plans/2026-04-18-claude-pal.md
+mv /home/jonny/sandbox-pal-design.md ~/repos/sandbox-pal/docs/superpowers/specs/2026-04-18-sandbox-pal-design.md
+mv /home/jonny/sandbox-pal-plan.md ~/repos/sandbox-pal/docs/superpowers/plans/2026-04-18-sandbox-pal.md
 ```
 
 - [ ] **Step 3: Write `.gitignore`**
@@ -142,11 +142,11 @@ SOFTWARE.
 - [ ] **Step 5: Write `README.md` (minimal placeholder, expanded in Phase 8)**
 
 ```markdown
-# claude-pal
+# sandbox-pal
 
 Local agent dispatch via Claude Code skills. Ships fresh Claude Code containers against GitHub issues with a gated plan → implement → review pipeline.
 
-See `docs/superpowers/specs/2026-04-18-claude-pal-design.md` for the design document.
+See `docs/superpowers/specs/2026-04-18-sandbox-pal-design.md` for the design document.
 
 **Status:** early development, v0.x. Not yet usable.
 ```
@@ -154,14 +154,14 @@ See `docs/superpowers/specs/2026-04-18-claude-pal-design.md` for the design docu
 - [ ] **Step 6: Write `CLAUDE.md` (project instructions for future Claude sessions)**
 
 ```markdown
-# claude-pal
+# sandbox-pal
 
 Local agent dispatch via Claude Code skills.
 
 ## Key Documentation
 
-- Full design: `docs/superpowers/specs/2026-04-18-claude-pal-design.md`
-- Implementation plan: `docs/superpowers/plans/2026-04-18-claude-pal.md`
+- Full design: `docs/superpowers/specs/2026-04-18-sandbox-pal-design.md`
+- Implementation plan: `docs/superpowers/plans/2026-04-18-sandbox-pal.md`
 - Upstream tracking (vendored pieces): `UPSTREAM.md`
 
 ## Architecture
@@ -187,7 +187,7 @@ Local agent dispatch via Claude Code skills.
 - [ ] **Step 7: Initial commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add .
 git commit -m "chore: initial repo scaffold with spec and plan"
 ```
@@ -222,42 +222,42 @@ Record the output of `git rev-parse HEAD` from step 1 — it will be written int
 ### Task 1.3: Vendor prompts
 
 **Files:**
-- Create: `~/repos/claude-pal/image/opt/pal/prompts/adversarial-plan.md` (copied from upstream)
-- Create: `~/repos/claude-pal/image/opt/pal/prompts/post-impl-review.md` (copied from upstream)
-- Create: `~/repos/claude-pal/image/opt/pal/prompts/post-impl-retry.md` (copied from upstream)
-- Create: `~/repos/claude-pal/image/opt/pal/prompts/implement.md` (copied from upstream, lightly adapted)
+- Create: `~/repos/sandbox-pal/image/opt/pal/prompts/adversarial-plan.md` (copied from upstream)
+- Create: `~/repos/sandbox-pal/image/opt/pal/prompts/post-impl-review.md` (copied from upstream)
+- Create: `~/repos/sandbox-pal/image/opt/pal/prompts/post-impl-retry.md` (copied from upstream)
+- Create: `~/repos/sandbox-pal/image/opt/pal/prompts/implement.md` (copied from upstream, lightly adapted)
 
 - [ ] **Step 1: Create directories**
 
 ```bash
-mkdir -p ~/repos/claude-pal/image/opt/pal/prompts
+mkdir -p ~/repos/sandbox-pal/image/opt/pal/prompts
 ```
 
 - [ ] **Step 2: Copy adversarial-plan.md verbatim**
 
 ```bash
-cp ~/claude-agent-dispatch/prompts/adversarial-plan.md ~/repos/claude-pal/image/opt/pal/prompts/
+cp ~/claude-agent-dispatch/prompts/adversarial-plan.md ~/repos/sandbox-pal/image/opt/pal/prompts/
 ```
 
 - [ ] **Step 3: Copy post-impl-review.md verbatim**
 
 ```bash
-cp ~/claude-agent-dispatch/prompts/post-impl-review.md ~/repos/claude-pal/image/opt/pal/prompts/
+cp ~/claude-agent-dispatch/prompts/post-impl-review.md ~/repos/sandbox-pal/image/opt/pal/prompts/
 ```
 
 - [ ] **Step 4: Copy post-impl-retry.md verbatim**
 
 ```bash
-cp ~/claude-agent-dispatch/prompts/post-impl-retry.md ~/repos/claude-pal/image/opt/pal/prompts/
+cp ~/claude-agent-dispatch/prompts/post-impl-retry.md ~/repos/sandbox-pal/image/opt/pal/prompts/
 ```
 
 - [ ] **Step 5: Copy implement.md and lightly adapt**
 
 ```bash
-cp ~/claude-agent-dispatch/prompts/implement.md ~/repos/claude-pal/image/opt/pal/prompts/
+cp ~/claude-agent-dispatch/prompts/implement.md ~/repos/sandbox-pal/image/opt/pal/prompts/
 ```
 
-Now edit `~/repos/claude-pal/image/opt/pal/prompts/implement.md` to remove references to the label state machine. Specifically:
+Now edit `~/repos/sandbox-pal/image/opt/pal/prompts/implement.md` to remove references to the label state machine. Specifically:
 - Remove any mention of `agent:in-progress` or other `agent:*` labels
 - Keep all TDD, self-review, and commit guidance
 - The prompt's essence — "implement the approved plan with TDD, commit each cycle, do not open a PR" — is preserved
@@ -265,7 +265,7 @@ Now edit `~/repos/claude-pal/image/opt/pal/prompts/implement.md` to remove refer
 The adapted file's first section should read:
 
 ```markdown
-You are implementing an approved plan for a GitHub issue in this repository, running inside an ephemeral claude-pal container.
+You are implementing an approved plan for a GitHub issue in this repository, running inside an ephemeral sandbox-pal container.
 
 ## Issue Context
 Read the issue details from environment variables:
@@ -286,7 +286,7 @@ This plan has been reviewed and approved. Follow it closely.
 - [ ] **Step 6: Commit the vendored prompts**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add image/opt/pal/prompts/
 git commit -m "vendor: import review and implement prompts from claude-agent-dispatch"
 ```
@@ -294,18 +294,18 @@ git commit -m "vendor: import review and implement prompts from claude-agent-dis
 ### Task 1.4: Vendor review-gates library
 
 **Files:**
-- Create: `~/repos/claude-pal/image/opt/pal/lib/review-gates.sh` (copied from upstream)
+- Create: `~/repos/sandbox-pal/image/opt/pal/lib/review-gates.sh` (copied from upstream)
 
 - [ ] **Step 1: Copy review-gates.sh**
 
 ```bash
-mkdir -p ~/repos/claude-pal/image/opt/pal/lib
-cp ~/claude-agent-dispatch/scripts/lib/review-gates.sh ~/repos/claude-pal/image/opt/pal/lib/
+mkdir -p ~/repos/sandbox-pal/image/opt/pal/lib
+cp ~/claude-agent-dispatch/scripts/lib/review-gates.sh ~/repos/sandbox-pal/image/opt/pal/lib/
 ```
 
 - [ ] **Step 2: Adapt for single-session usage**
 
-Edit `~/repos/claude-pal/image/opt/pal/lib/review-gates.sh`:
+Edit `~/repos/sandbox-pal/image/opt/pal/lib/review-gates.sh`:
 
 - The functions `run_adversarial_plan_review`, `run_post_impl_review`, `handle_post_impl_review_retry`, and the `_extract_review_json` helper are preserved verbatim.
 - The helper functions they depend on (`load_prompt`, `run_claude`, `parse_claude_output`, `set_label`, `log`) are assumed to exist in sibling lib files — we'll provide adapted versions in Task 2.5 (run_claude, parse_claude_output) and Task 2.1 (log). The `set_label` calls in the upstream file must be **stubbed** since we don't have a label state machine:
@@ -313,7 +313,7 @@ Edit `~/repos/claude-pal/image/opt/pal/lib/review-gates.sh`:
 Replace every `set_label "agent:failed"` with:
 
 ```bash
-# No label state machine in claude-pal; status is written to status.json by the entrypoint
+# No label state machine in sandbox-pal; status is written to status.json by the entrypoint
 STATUS_OUTCOME="failure"
 STATUS_FAILURE_REASON="adversarial_review_could_not_parse"  # or whatever context
 ```
@@ -329,7 +329,7 @@ The `gh issue comment` calls within the review-gates functions are **preserved**
 - [ ] **Step 3: Run shellcheck on the adapted file**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/lib/review-gates.sh
+shellcheck ~/repos/sandbox-pal/image/opt/pal/lib/review-gates.sh
 ```
 
 Expected: zero warnings. Fix any that appear (usually unquoted expansions in the replaced sections).
@@ -337,7 +337,7 @@ Expected: zero warnings. Fix any that appear (usually unquoted expansions in the
 - [ ] **Step 4: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add image/opt/pal/lib/review-gates.sh
 git commit -m "vendor: import review-gates.sh, adapt for single-session flow"
 ```
@@ -345,7 +345,7 @@ git commit -m "vendor: import review-gates.sh, adapt for single-session flow"
 ### Task 1.5: Write UPSTREAM.md tracking
 
 **Files:**
-- Create: `~/repos/claude-pal/UPSTREAM.md`
+- Create: `~/repos/sandbox-pal/UPSTREAM.md`
 
 - [ ] **Step 1: Write UPSTREAM.md with source paths, upstream SHA, and modification notes**
 
@@ -363,7 +363,7 @@ Resync via `scripts/diff-upstream.sh` (see Phase 8).
 | `image/opt/pal/prompts/adversarial-plan.md` | `prompts/adversarial-plan.md` | <SHA from Task 1.2> | none |
 | `image/opt/pal/prompts/post-impl-review.md` | `prompts/post-impl-review.md` | <SHA from Task 1.2> | none |
 | `image/opt/pal/prompts/post-impl-retry.md` | `prompts/post-impl-retry.md` | <SHA from Task 1.2> | none |
-| `image/opt/pal/prompts/implement.md` | `prompts/implement.md` | <SHA from Task 1.2> | removed label-state-machine references; updated intro to mention claude-pal container |
+| `image/opt/pal/prompts/implement.md` | `prompts/implement.md` | <SHA from Task 1.2> | removed label-state-machine references; updated intro to mention sandbox-pal container |
 
 ## Libraries
 
@@ -382,7 +382,7 @@ Replace `<SHA from Task 1.2>` with the actual SHA recorded in Task 1.2 Step 1.
 - [ ] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add UPSTREAM.md
 git commit -m "docs: add UPSTREAM.md tracking vendored files"
 ```
@@ -390,7 +390,7 @@ git commit -m "docs: add UPSTREAM.md tracking vendored files"
 ### Task 1.6: Write base Dockerfile
 
 **Files:**
-- Create: `~/repos/claude-pal/image/Dockerfile`
+- Create: `~/repos/sandbox-pal/image/Dockerfile`
 
 - [ ] **Step 1: Write Dockerfile**
 
@@ -442,7 +442,7 @@ ENTRYPOINT ["/opt/pal/entrypoint.sh"]
 - [ ] **Step 2: Verify the file parses as a valid Dockerfile**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 docker buildx build --target 0 -f image/Dockerfile . --dry-run 2>&1 | head -20 || true
 # (--dry-run is newer docker; alternative: just try a build in step 3)
 ```
@@ -450,7 +450,7 @@ docker buildx build --target 0 -f image/Dockerfile . --dry-run 2>&1 | head -20 |
 - [ ] **Step 3: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add image/Dockerfile
 git commit -m "feat(image): initial Dockerfile with claude CLI, gh, jq, git"
 ```
@@ -458,7 +458,7 @@ git commit -m "feat(image): initial Dockerfile with claude CLI, gh, jq, git"
 ### Task 1.7: Minimal entrypoint that logs and exits
 
 **Files:**
-- Create: `~/repos/claude-pal/image/opt/pal/entrypoint.sh`
+- Create: `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh`
 
 - [ ] **Step 1: Write a minimal placeholder entrypoint (full pipeline in Phase 2)**
 
@@ -480,7 +480,7 @@ log() {
 }
 
 # ─── Placeholder for Phase 2: report a trivial success and exit ──
-log "claude-pal entrypoint v0.1 (scaffold)"
+log "sandbox-pal entrypoint v0.1 (scaffold)"
 log "EVENT_TYPE=$EVENT_TYPE REPO=$REPO NUMBER=$NUMBER"
 log "Verifying claude CLI is present..."
 claude --version | tee -a "$STATUS_DIR/log"
@@ -507,7 +507,7 @@ log "Scaffold run complete."
 - [ ] **Step 2: shellcheck**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/entrypoint.sh
+shellcheck ~/repos/sandbox-pal/image/opt/pal/entrypoint.sh
 ```
 
 Expected: zero warnings.
@@ -515,7 +515,7 @@ Expected: zero warnings.
 - [ ] **Step 3: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add image/opt/pal/entrypoint.sh
 git commit -m "feat(image): scaffold entrypoint.sh (writes status.json on exit)"
 ```
@@ -523,13 +523,13 @@ git commit -m "feat(image): scaffold entrypoint.sh (writes status.json on exit)"
 ### Task 1.8: Image build and smoke test
 
 **Files:**
-- Create: `~/repos/claude-pal/scripts/build-image.sh`
-- Create: `~/repos/claude-pal/tests/test_image_smoke.bats`
+- Create: `~/repos/sandbox-pal/scripts/build-image.sh`
+- Create: `~/repos/sandbox-pal/tests/test_image_smoke.bats`
 
 - [ ] **Step 1: Add BATS as a submodule**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git submodule add https://github.com/bats-core/bats-core.git tests/bats
 git submodule add https://github.com/bats-core/bats-support.git tests/test_helper/bats-support
 git submodule add https://github.com/bats-core/bats-assert.git tests/test_helper/bats-assert
@@ -539,16 +539,16 @@ git commit -m "chore(test): add BATS-core submodules"
 - [ ] **Step 2: Write the image build script**
 
 ```bash
-mkdir -p ~/repos/claude-pal/scripts
-cat > ~/repos/claude-pal/scripts/build-image.sh <<'EOF'
+mkdir -p ~/repos/sandbox-pal/scripts
+cat > ~/repos/sandbox-pal/scripts/build-image.sh <<'EOF'
 #!/bin/bash
-# Build the claude-pal base image.
+# Build the sandbox-pal base image.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-TAG="${1:-claude-pal:latest}"
+TAG="${1:-sandbox-pal:latest}"
 BASE_IMAGE="${BASE_IMAGE:-ubuntu:24.04}"
 
 cd "$REPO_ROOT"
@@ -558,7 +558,7 @@ docker build \
     -t "$TAG" \
     .
 EOF
-chmod +x ~/repos/claude-pal/scripts/build-image.sh
+chmod +x ~/repos/sandbox-pal/scripts/build-image.sh
 ```
 
 - [ ] **Step 3: Write the smoke test**
@@ -566,14 +566,14 @@ chmod +x ~/repos/claude-pal/scripts/build-image.sh
 > **Bind-mount permissions note (Linux hosts):** The Dockerfile runs the container as a non-root `agent` user created with `useradd -m` in the image, so `agent`'s UID is typically `1001` (not the host user's `1000`). When the entrypoint writes to the bind-mounted `/status` dir, Linux kernel file perms (not Docker) govern the write, so the host-side dir must be writable by the container user. `mktemp -d` creates a `0700` dir, which the container user cannot write to — the scaffold run fails with `tee: /status/log: Permission denied`. Fix: `chmod 0777` the status dir after `mktemp`. The Docker launcher in Task 3.4 applies the same treatment to each run's status dir.
 
 ```bash
-cat > ~/repos/claude-pal/tests/test_image_smoke.bats <<'EOF'
+cat > ~/repos/sandbox-pal/tests/test_image_smoke.bats <<'EOF'
 #!/usr/bin/env bats
 load 'test_helper/bats-support/load'
 load 'test_helper/bats-assert/load'
 
 setup() {
     REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
-    IMAGE_TAG="claude-pal:test-$RANDOM"
+    IMAGE_TAG="sandbox-pal:test-$RANDOM"
     STATUS_DIR="$(mktemp -d)"
     # Container runs as non-root "agent" user with a UID that usually
     # differs from the host's, so the bind-mounted status dir must be
@@ -607,7 +607,7 @@ EOF
 - [ ] **Step 4: Run the smoke test**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 ./tests/bats/bin/bats tests/test_image_smoke.bats
 ```
 
@@ -616,7 +616,7 @@ Expected: both tests pass. Image build is slow the first time (~5 minutes for ba
 - [ ] **Step 5: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add scripts/build-image.sh tests/test_image_smoke.bats
 git commit -m "test(image): smoke test for image build and scaffold entrypoint"
 ```
@@ -630,7 +630,7 @@ git commit -m "test(image): smoke test for image build and scaffold entrypoint"
 ### Task 2.1: Entrypoint skeleton with logging, status, and error trap
 
 **Files:**
-- Modify: `~/repos/claude-pal/image/opt/pal/entrypoint.sh`
+- Modify: `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh`
 
 - [ ] **Step 1: Replace the scaffold entrypoint with structured skeleton**
 
@@ -713,7 +713,7 @@ trap 'write_status' EXIT
 . "$LIB_DIR/review-gates.sh"
 
 # ─── Main pipeline (filled in by later tasks) ───────────────────
-log "claude-pal v0.2 entrypoint"
+log "sandbox-pal v0.2 entrypoint"
 log "event=$EVENT_TYPE repo=$REPO number=$NUMBER"
 
 STATUS_PHASE="fetching_context"
@@ -729,7 +729,7 @@ STATUS_PHASE="complete"
 - [ ] **Step 2: shellcheck**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/entrypoint.sh
+shellcheck ~/repos/sandbox-pal/image/opt/pal/entrypoint.sh
 ```
 
 Expected: zero warnings.
@@ -737,7 +737,7 @@ Expected: zero warnings.
 - [ ] **Step 3: Rebuild and rerun smoke test**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 ./tests/bats/bin/bats tests/test_image_smoke.bats
 ```
 
@@ -746,7 +746,7 @@ Expected: both tests still pass.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add image/opt/pal/entrypoint.sh
 git commit -m "feat(entrypoint): skeleton with logging, status tracking, error trap"
 ```
@@ -754,9 +754,9 @@ git commit -m "feat(entrypoint): skeleton with logging, status tracking, error t
 ### Task 2.2: Firewall allowlist application
 
 **Files:**
-- Create: `~/repos/claude-pal/image/opt/pal/allowlist.yaml`
-- Create: `~/repos/claude-pal/image/opt/pal/lib/firewall.sh`
-- Modify: `~/repos/claude-pal/image/opt/pal/entrypoint.sh` (source + call firewall apply)
+- Create: `~/repos/sandbox-pal/image/opt/pal/allowlist.yaml`
+- Create: `~/repos/sandbox-pal/image/opt/pal/lib/firewall.sh`
+- Modify: `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh` (source + call firewall apply)
 
 - [ ] **Step 1: Write the default allowlist**
 
@@ -845,7 +845,7 @@ apply_firewall() {
 
 - [ ] **Step 3: Wire firewall.sh into entrypoint**
 
-In `~/repos/claude-pal/image/opt/pal/entrypoint.sh`, after the review-gates source line, add:
+In `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh`, after the review-gates source line, add:
 
 ```bash
 # shellcheck source=/dev/null
@@ -861,7 +861,7 @@ apply_firewall "$PAL_HOME/allowlist.yaml" || {
 - [ ] **Step 4: shellcheck**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/lib/firewall.sh ~/repos/claude-pal/image/opt/pal/entrypoint.sh
+shellcheck ~/repos/sandbox-pal/image/opt/pal/lib/firewall.sh ~/repos/sandbox-pal/image/opt/pal/entrypoint.sh
 ```
 
 Expected: zero warnings.
@@ -869,13 +869,13 @@ Expected: zero warnings.
 - [ ] **Step 5: Rebuild image and verify firewall rules install**
 
 ```bash
-cd ~/repos/claude-pal
-./scripts/build-image.sh claude-pal:dev
+cd ~/repos/sandbox-pal
+./scripts/build-image.sh sandbox-pal:dev
 docker run --rm --cap-add=NET_ADMIN \
   -e CLAUDE_CODE_OAUTH_TOKEN=fake-for-smoke \
   -e GH_TOKEN=fake-for-smoke \
   -v /tmp/pal-smoke:/status \
-  claude-pal:dev implement owner/repo 42 2>&1 | tail -30
+  sandbox-pal:dev implement owner/repo 42 2>&1 | tail -30
 cat /tmp/pal-smoke/status.json | jq .
 ```
 
@@ -886,7 +886,7 @@ Note: `--cap-add=NET_ADMIN` is required for iptables inside the container. The s
 - [ ] **Step 6: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add image/opt/pal/allowlist.yaml image/opt/pal/lib/firewall.sh image/opt/pal/entrypoint.sh
 git commit -m "feat(entrypoint): apply deny-by-default iptables allowlist at startup"
 ```
@@ -894,8 +894,8 @@ git commit -m "feat(entrypoint): apply deny-by-default iptables allowlist at sta
 ### Task 2.3: Repo clone and worktree setup
 
 **Files:**
-- Create: `~/repos/claude-pal/image/opt/pal/lib/worktree.sh`
-- Modify: `~/repos/claude-pal/image/opt/pal/entrypoint.sh`
+- Create: `~/repos/sandbox-pal/image/opt/pal/lib/worktree.sh`
+- Modify: `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh`
 
 - [ ] **Step 1: Write worktree.sh**
 
@@ -938,8 +938,8 @@ setup_worktree() {
     fi
 
     # Configure git identity inside the worktree
-    local bot_name="${AGENT_GIT_USER_NAME:-claude-pal}"
-    local bot_email="${AGENT_GIT_USER_EMAIL:-claude-pal@local}"
+    local bot_name="${AGENT_GIT_USER_NAME:-sandbox-pal}"
+    local bot_email="${AGENT_GIT_USER_EMAIL:-sandbox-pal@local}"
     git -C "$WORKTREE_DIR" config user.name "$bot_name"
     git -C "$WORKTREE_DIR" config user.email "$bot_email"
 
@@ -965,8 +965,8 @@ setup_worktree "$REPO" "$NUMBER" "$EVENT_TYPE" || {
 - [ ] **Step 3: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/lib/worktree.sh ~/repos/claude-pal/image/opt/pal/entrypoint.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/image/opt/pal/lib/worktree.sh ~/repos/sandbox-pal/image/opt/pal/entrypoint.sh
+cd ~/repos/sandbox-pal
 git add image/opt/pal/lib/worktree.sh image/opt/pal/entrypoint.sh
 git commit -m "feat(entrypoint): clone repo and setup worktree per run"
 ```
@@ -974,8 +974,8 @@ git commit -m "feat(entrypoint): clone repo and setup worktree per run"
 ### Task 2.4: Fetch issue body and plan comment
 
 **Files:**
-- Create: `~/repos/claude-pal/image/opt/pal/lib/fetch-context.sh`
-- Modify: `~/repos/claude-pal/image/opt/pal/entrypoint.sh`
+- Create: `~/repos/sandbox-pal/image/opt/pal/lib/fetch-context.sh`
+- Modify: `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh`
 
 - [ ] **Step 1: Write fetch-context.sh**
 
@@ -1079,8 +1079,8 @@ fi
 - [ ] **Step 3: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/lib/fetch-context.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/image/opt/pal/lib/fetch-context.sh
+cd ~/repos/sandbox-pal
 git add image/opt/pal/lib/fetch-context.sh image/opt/pal/entrypoint.sh
 git commit -m "feat(entrypoint): fetch issue/plan or PR context from GitHub"
 ```
@@ -1088,8 +1088,8 @@ git commit -m "feat(entrypoint): fetch issue/plan or PR context from GitHub"
 ### Task 2.5: run_claude and load_prompt helpers
 
 **Files:**
-- Create: `~/repos/claude-pal/image/opt/pal/lib/claude-runner.sh`
-- Modify: `~/repos/claude-pal/image/opt/pal/entrypoint.sh`
+- Create: `~/repos/sandbox-pal/image/opt/pal/lib/claude-runner.sh`
+- Modify: `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh`
 
 - [ ] **Step 1: Write claude-runner.sh**
 
@@ -1156,8 +1156,8 @@ In `entrypoint.sh`, after the other source lines:
 - [ ] **Step 3: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/lib/claude-runner.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/image/opt/pal/lib/claude-runner.sh
+cd ~/repos/sandbox-pal
 git add image/opt/pal/lib/claude-runner.sh image/opt/pal/entrypoint.sh
 git commit -m "feat(entrypoint): add claude-runner lib (load_prompt, run_claude, parse_claude_output)"
 ```
@@ -1165,7 +1165,7 @@ git commit -m "feat(entrypoint): add claude-runner lib (load_prompt, run_claude,
 ### Task 2.6: Gate A — adversarial plan review
 
 **Files:**
-- Modify: `~/repos/claude-pal/image/opt/pal/entrypoint.sh`
+- Modify: `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh`
 
 - [ ] **Step 1: Wire Gate A into the pipeline**
 
@@ -1191,8 +1191,8 @@ Check the vendored file mentions `AGENT_ADVERSARIAL_PLAN_REVIEW`, `AGENT_ALLOWED
 - [ ] **Step 3: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/entrypoint.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/image/opt/pal/entrypoint.sh
+cd ~/repos/sandbox-pal
 git add image/opt/pal/entrypoint.sh
 git commit -m "feat(entrypoint): Gate A adversarial plan review wired in for implement flow"
 ```
@@ -1200,7 +1200,7 @@ git commit -m "feat(entrypoint): Gate A adversarial plan review wired in for imp
 ### Task 2.7: Implement phase with TDD retry loop
 
 **Files:**
-- Modify: `~/repos/claude-pal/image/opt/pal/entrypoint.sh`
+- Modify: `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh`
 
 - [ ] **Step 1: Add the implement phase with retry loop**
 
@@ -1291,8 +1291,8 @@ log "implement: captured $(git -C "$WORKTREE_DIR" rev-list --count "${start_sha}
 - [ ] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/entrypoint.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/image/opt/pal/entrypoint.sh
+cd ~/repos/sandbox-pal
 git add image/opt/pal/entrypoint.sh
 git commit -m "feat(entrypoint): implement phase with TDD retry loop and test-fail feedback"
 ```
@@ -1300,7 +1300,7 @@ git commit -m "feat(entrypoint): implement phase with TDD retry loop and test-fa
 ### Task 2.8: Gate B — post-impl review and retry
 
 **Files:**
-- Modify: `~/repos/claude-pal/image/opt/pal/entrypoint.sh`
+- Modify: `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh`
 
 - [ ] **Step 1: Add Gate B after implement**
 
@@ -1330,8 +1330,8 @@ fi
 - [ ] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/entrypoint.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/image/opt/pal/entrypoint.sh
+cd ~/repos/sandbox-pal
 git add image/opt/pal/entrypoint.sh
 git commit -m "feat(entrypoint): Gate B post-impl review + retry with concern handling"
 ```
@@ -1339,7 +1339,7 @@ git commit -m "feat(entrypoint): Gate B post-impl review + retry with concern ha
 ### Task 2.9: Push branch and create PR
 
 **Files:**
-- Modify: `~/repos/claude-pal/image/opt/pal/entrypoint.sh`
+- Modify: `~/repos/sandbox-pal/image/opt/pal/entrypoint.sh`
 
 - [ ] **Step 1: Add push + PR create for implement; push-only for revise**
 
@@ -1363,10 +1363,10 @@ if [ "$EVENT_TYPE" = "revise" ]; then
     log "revise: new commits pushed to existing PR #$NUMBER"
 else
     # Create PR
-    local_pr_title="${AGENT_ISSUE_TITLE:-claude-pal implementation}"
+    local_pr_title="${AGENT_ISSUE_TITLE:-sandbox-pal implementation}"
     local_pr_body="Closes #${NUMBER}
 
-Implemented by claude-pal based on the approved plan in issue #${NUMBER}."
+Implemented by sandbox-pal based on the approved plan in issue #${NUMBER}."
 
     pr_create_output=$(gh pr create \
         --repo "$REPO" \
@@ -1389,8 +1389,8 @@ STATUS_PHASE="complete"
 - [ ] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/image/opt/pal/entrypoint.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/image/opt/pal/entrypoint.sh
+cd ~/repos/sandbox-pal
 git add image/opt/pal/entrypoint.sh
 git commit -m "feat(entrypoint): push branch and create PR (or update PR for revise)"
 ```
@@ -1398,29 +1398,29 @@ git commit -m "feat(entrypoint): push branch and create PR (or update PR for rev
 ### Task 2.10: End-to-end container pipeline test
 
 **Files:**
-- Create: `~/repos/claude-pal/tests/test_container_pipeline.bats`
+- Create: `~/repos/sandbox-pal/tests/test_container_pipeline.bats`
 - Requires: a test GitHub repo the developer owns + a test issue with a trivial plan
 
 - [ ] **Step 1: Prepare a test repo and issue manually**
 
 This is a one-time manual step (documented here; tests use repo name env var):
-1. Create a toy repo in your GitHub account, e.g., `claude-pal-smoketest`
+1. Create a toy repo in your GitHub account, e.g., `sandbox-pal-smoketest`
 2. Add a README and a trivial test file with a failing test
 3. Open an issue with a minimal `<!-- agent-plan -->` comment describing a trivial fix
 
 - [ ] **Step 2: Write the integration test**
 
 ```bash
-cat > ~/repos/claude-pal/tests/test_container_pipeline.bats <<'EOF'
+cat > ~/repos/sandbox-pal/tests/test_container_pipeline.bats <<'EOF'
 #!/usr/bin/env bats
 load 'test_helper/bats-support/load'
 load 'test_helper/bats-assert/load'
 
 setup() {
     REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
-    IMAGE_TAG="claude-pal:test-pipeline-$RANDOM"
+    IMAGE_TAG="sandbox-pal:test-pipeline-$RANDOM"
     STATUS_DIR="$(mktemp -d)"
-    TEST_REPO="${PAL_TEST_REPO:?set PAL_TEST_REPO to owner/claude-pal-smoketest}"
+    TEST_REPO="${PAL_TEST_REPO:?set PAL_TEST_REPO to owner/sandbox-pal-smoketest}"
     TEST_ISSUE="${PAL_TEST_ISSUE:?set PAL_TEST_ISSUE to the test issue number}"
     : "${CLAUDE_CODE_OAUTH_TOKEN:?required}"
     : "${GH_TOKEN:?required}"
@@ -1457,8 +1457,8 @@ EOF
 - [ ] **Step 3: Run the integration test**
 
 ```bash
-cd ~/repos/claude-pal
-export PAL_TEST_REPO="yourname/claude-pal-smoketest"
+cd ~/repos/sandbox-pal
+export PAL_TEST_REPO="yourname/sandbox-pal-smoketest"
 export PAL_TEST_ISSUE="1"
 export CLAUDE_CODE_OAUTH_TOKEN="$(cat ~/.config/claude-dispatch/oauth.env 2>/dev/null || echo)"
 export GH_TOKEN="$(cat ~/.config/gh-tokens/dispatch-cli-token 2>/dev/null || echo)"
@@ -1470,7 +1470,7 @@ Expected: test completes (may take 5–15 minutes depending on the trivial fix).
 - [ ] **Step 4: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add tests/test_container_pipeline.bats
 git commit -m "test(container): end-to-end pipeline integration test"
 ```
@@ -1484,7 +1484,7 @@ git commit -m "test(container): end-to-end pipeline integration test"
 > **Plugin layout (applies to all Phase 3–6 tasks).** The host-side skills are a Claude Code plugin. The canonical layout (per the official `plugin-dev/plugin-structure` skill) is:
 >
 > ```
-> ~/repos/claude-pal/
+> ~/repos/sandbox-pal/
 > ├── .claude-plugin/plugin.json   # plugin manifest
 > ├── lib/                         # shared bash helpers (plugin root!)
 > │   ├── config.sh
@@ -1507,22 +1507,22 @@ git commit -m "test(container): end-to-end pipeline integration test"
 ### Task 3.1: Plugin manifest, skill directory structure, and config loader
 
 **Files:**
-- Create: `~/repos/claude-pal/.claude-plugin/plugin.json`
-- Create: `~/repos/claude-pal/skills/pal-implement/` (directory)
-- Create: `~/repos/claude-pal/lib/config.sh`
+- Create: `~/repos/sandbox-pal/.claude-plugin/plugin.json`
+- Create: `~/repos/sandbox-pal/skills/pal-implement/` (directory)
+- Create: `~/repos/sandbox-pal/lib/config.sh`
 
 - [ ] **Step 1: Write the plugin manifest**
 
 ```bash
-mkdir -p ~/repos/claude-pal/.claude-plugin ~/repos/claude-pal/lib ~/repos/claude-pal/skills/pal-implement
+mkdir -p ~/repos/sandbox-pal/.claude-plugin ~/repos/sandbox-pal/lib ~/repos/sandbox-pal/skills/pal-implement
 
-cat > ~/repos/claude-pal/.claude-plugin/plugin.json <<'EOF'
+cat > ~/repos/sandbox-pal/.claude-plugin/plugin.json <<'EOF'
 {
-  "name": "claude-pal",
+  "name": "sandbox-pal",
   "version": "0.1.0",
   "description": "Local agent dispatch for Claude Code — publishes implementation plans to GitHub and runs a gated pipeline (adversarial plan review → TDD implement → post-impl review → PR) inside an ephemeral Docker container.",
   "author": { "name": "jnurre64" },
-  "repository": "https://github.com/jnurre64/claude-pal",
+  "repository": "https://github.com/jnurre64/sandbox-pal",
   "license": "MIT",
   "keywords": ["agents", "automation", "github", "docker"]
 }
@@ -1532,9 +1532,9 @@ EOF
 - [ ] **Step 2: Write the config loader**
 
 ```bash
-cat > ~/repos/claude-pal/lib/config.sh <<'EOF'
+cat > ~/repos/sandbox-pal/lib/config.sh <<'EOF'
 # lib/config.sh
-# Resolve and load the claude-pal host config.
+# Resolve and load the sandbox-pal host config.
 # Returns config values via stdout or sets variables depending on caller.
 
 pal_config_path() {
@@ -1542,16 +1542,16 @@ pal_config_path() {
     host_os=$(uname -s)
     case "$host_os" in
         Linux|Darwin)
-            echo "${XDG_CONFIG_HOME:-$HOME/.config}/claude-pal/config.env"
+            echo "${XDG_CONFIG_HOME:-$HOME/.config}/sandbox-pal/config.env"
             ;;
         MINGW*|MSYS*|CYGWIN*)
             # Git Bash on Windows
             local local_app
             local_app=$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")
-            echo "$local_app/claude-pal/config.env"
+            echo "$local_app/sandbox-pal/config.env"
             ;;
         *)
-            echo "${XDG_CONFIG_HOME:-$HOME/.config}/claude-pal/config.env"
+            echo "${XDG_CONFIG_HOME:-$HOME/.config}/sandbox-pal/config.env"
             ;;
     esac
 }
@@ -1595,13 +1595,13 @@ EOF
 - [ ] **Step 3: shellcheck**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/config.sh
+shellcheck ~/repos/sandbox-pal/lib/config.sh
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add .claude-plugin/plugin.json lib/config.sh skills/pal-implement/
 git commit -m "feat(plugin): manifest + config loader at plugin-root lib/"
 ```
@@ -1609,12 +1609,12 @@ git commit -m "feat(plugin): manifest + config loader at plugin-root lib/"
 ### Task 3.2: Preflight check helpers
 
 **Files:**
-- Create: `~/repos/claude-pal/lib/preflight.sh`
+- Create: `~/repos/sandbox-pal/lib/preflight.sh`
 
 - [ ] **Step 1: Write preflight checks**
 
 ```bash
-cat > ~/repos/claude-pal/lib/preflight.sh <<'EOF'
+cat > ~/repos/sandbox-pal/lib/preflight.sh <<'EOF'
 # lib/preflight.sh
 # Preflight checks run before every dispatch.
 
@@ -1715,13 +1715,13 @@ EOF
 - [ ] **Step 2: shellcheck**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/preflight.sh
+shellcheck ~/repos/sandbox-pal/lib/preflight.sh
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add lib/preflight.sh
 git commit -m "feat(plugin): preflight check helpers (auth, docker, windows-bash, gh, lock)"
 ```
@@ -1729,12 +1729,12 @@ git commit -m "feat(plugin): preflight check helpers (auth, docker, windows-bash
 ### Task 3.3: Run registry helper
 
 **Files:**
-- Create: `~/repos/claude-pal/lib/runs.sh`
+- Create: `~/repos/sandbox-pal/lib/runs.sh`
 
 - [ ] **Step 1: Write runs.sh**
 
 ```bash
-cat > ~/repos/claude-pal/lib/runs.sh <<'EOF'
+cat > ~/repos/sandbox-pal/lib/runs.sh <<'EOF'
 # lib/runs.sh
 # Run registry: directory layout, run id generation, reconciliation.
 
@@ -1743,12 +1743,12 @@ pal_runs_dir() {
     host_os=$(uname -s)
     case "$host_os" in
         Linux|Darwin)
-            echo "${XDG_DATA_HOME:-$HOME/.local/share}/claude-pal/runs"
+            echo "${XDG_DATA_HOME:-$HOME/.local/share}/sandbox-pal/runs"
             ;;
         MINGW*|MSYS*|CYGWIN*)
             local local_app
             local_app=$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")
-            echo "$local_app/claude-pal/runs"
+            echo "$local_app/sandbox-pal/runs"
             ;;
     esac
 }
@@ -1783,7 +1783,7 @@ pal_write_launch_meta() {
   "host_os": "$(uname -s)",
   "backend": "${PAL_BACKEND:-docker-linux}",
   "docker_host": $([ -n "${DOCKER_HOST:-}" ] && printf '"%s"' "$DOCKER_HOST" || echo null),
-  "image_tag": "${PAL_IMAGE_TAG:-claude-pal:latest}"
+  "image_tag": "${PAL_IMAGE_TAG:-sandbox-pal:latest}"
 }
 EOF_META
 }
@@ -1810,8 +1810,8 @@ EOF
 - [ ] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/runs.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/runs.sh
+cd ~/repos/sandbox-pal
 git add lib/runs.sh
 git commit -m "feat(plugin): run registry helpers (dir layout, run ids, lock files)"
 ```
@@ -1819,14 +1819,14 @@ git commit -m "feat(plugin): run registry helpers (dir layout, run ids, lock fil
 ### Task 3.4: Docker launcher (sync mode)
 
 **Files:**
-- Create: `~/repos/claude-pal/lib/launcher.sh`
+- Create: `~/repos/sandbox-pal/lib/launcher.sh`
 
 > **Bind-mount permissions (Linux hosts):** The container runs as the non-root `agent` user defined in the Dockerfile. On Linux, that user's UID usually differs from the host user's, so the bind-mounted `/status` dir needs to be writable by "other" or the entrypoint's `tee`/status writes fail with `Permission denied`. The launcher `chmod 0777`s `run_dir` before `docker run`. (On macOS/Docker Desktop the virtualized file sharing rewrites ownership, so this is effectively a no-op there; on Windows/Docker Desktop the NTFS ACL check in Phase 7 covers the analogous concern.) The Phase 1 smoke test already applies this chmod for the same reason.
 
 - [ ] **Step 1: Write launcher.sh**
 
 ```bash
-cat > ~/repos/claude-pal/lib/launcher.sh <<'EOF'
+cat > ~/repos/sandbox-pal/lib/launcher.sh <<'EOF'
 # lib/launcher.sh
 # Backend adapter: launches the container via docker run.
 
@@ -1838,7 +1838,7 @@ pal_launch_sync() {
 
     local run_dir
     run_dir=$(pal_run_dir "$run_id")
-    local image_tag="${PAL_IMAGE_TAG:-claude-pal:latest}"
+    local image_tag="${PAL_IMAGE_TAG:-sandbox-pal:latest}"
 
     # Make the bind-mounted status dir writable by the container's non-root
     # agent user (UID differs from host on Linux). See note above.
@@ -1898,28 +1898,28 @@ pal_render_status_summary() {
 
     case "$outcome" in
         success)
-            printf '✓ claude-pal run %s: success\n' "$run_id"
+            printf '✓ sandbox-pal run %s: success\n' "$run_id"
             printf '  PR opened: %s\n' "$pr_url"
             ;;
         clarification_needed)
-            printf '? claude-pal run %s: clarification needed\n' "$run_id"
+            printf '? sandbox-pal run %s: clarification needed\n' "$run_id"
             printf '  Respond on the issue, then re-run /pal-implement\n'
             ;;
         review_concerns_unresolved)
-            printf '⚠ claude-pal run %s: post-impl review concerns unresolved\n' "$run_id"
+            printf '⚠ sandbox-pal run %s: post-impl review concerns unresolved\n' "$run_id"
             printf '  Review the branch manually. Concerns:\n'
             jq -r '.review_concerns_unresolved[]' "$status_file" | sed 's/^/    - /'
             ;;
         failure)
-            printf '✗ claude-pal run %s: failed at phase %s\n' "$run_id" "$phase"
+            printf '✗ sandbox-pal run %s: failed at phase %s\n' "$run_id" "$phase"
             printf '  Reason: %s\n' "$failure_reason"
             printf '  Log: %s/log\n' "$run_dir"
             ;;
         cancelled)
-            printf '✗ claude-pal run %s: cancelled\n' "$run_id"
+            printf '✗ sandbox-pal run %s: cancelled\n' "$run_id"
             ;;
         *)
-            printf '? claude-pal run %s: unknown outcome "%s"\n' "$run_id" "$outcome"
+            printf '? sandbox-pal run %s: unknown outcome "%s"\n' "$run_id" "$outcome"
             ;;
     esac
 }
@@ -1929,8 +1929,8 @@ EOF
 - [ ] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/launcher.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/launcher.sh
+cd ~/repos/sandbox-pal
 git add lib/launcher.sh
 git commit -m "feat(plugin): docker sync launcher and status pretty-printer"
 ```
@@ -1938,7 +1938,7 @@ git commit -m "feat(plugin): docker sync launcher and status pretty-printer"
 ### Task 3.5: `/pal-implement` skill markdown
 
 **Files:**
-- Create: `~/repos/claude-pal/skills/pal-implement/SKILL.md`
+- Create: `~/repos/sandbox-pal/skills/pal-implement/SKILL.md`
 
 - [ ] **Step 1: Write SKILL.md**
 
@@ -1950,7 +1950,7 @@ description: Launch an ephemeral Docker container that executes the posted plan 
 
 # pal-implement
 
-Launch a claude-pal container to implement a GitHub issue's posted plan.
+Launch a sandbox-pal container to implement a GitHub issue's posted plan.
 
 ## Usage
 
@@ -1986,7 +1986,7 @@ If `--async` flag is given, instead of steps 6-8 use the async path (implemented
 - [ ] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add skills/pal-implement/SKILL.md
 git commit -m "feat(plugin): pal-implement SKILL.md (sync mode)"
 ```
@@ -1994,12 +1994,12 @@ git commit -m "feat(plugin): pal-implement SKILL.md (sync mode)"
 ### Task 3.6: Skill smoke test
 
 **Files:**
-- Create: `~/repos/claude-pal/tests/test_skill_pal_implement.bats`
+- Create: `~/repos/sandbox-pal/tests/test_skill_pal_implement.bats`
 
 - [ ] **Step 1: Write the test (mocks docker)**
 
 ```bash
-cat > ~/repos/claude-pal/tests/test_skill_pal_implement.bats <<'EOF'
+cat > ~/repos/sandbox-pal/tests/test_skill_pal_implement.bats <<'EOF'
 #!/usr/bin/env bats
 load 'test_helper/bats-support/load'
 load 'test_helper/bats-assert/load'
@@ -2011,12 +2011,12 @@ setup() {
     export XDG_CONFIG_HOME="$TMPHOME/.config"
     export XDG_DATA_HOME="$TMPHOME/.local/share"
 
-    mkdir -p "$XDG_CONFIG_HOME/claude-pal"
-    cat > "$XDG_CONFIG_HOME/claude-pal/config.env" <<'CONFIG'
+    mkdir -p "$XDG_CONFIG_HOME/sandbox-pal"
+    cat > "$XDG_CONFIG_HOME/sandbox-pal/config.env" <<'CONFIG'
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fake
 GH_TOKEN=github_pat_fake
 CONFIG
-    chmod 600 "$XDG_CONFIG_HOME/claude-pal/config.env"
+    chmod 600 "$XDG_CONFIG_HOME/sandbox-pal/config.env"
 
     # Mock docker with a script that writes a fake status.json
     export PATH="$TMPHOME/bin:$PATH"
@@ -2028,7 +2028,7 @@ case "$1" in
     run)
         # Find the -v bind mount for status
         status_dir=$(echo "$@" | grep -oE '/tmp[^:]+:/status' | cut -d: -f1 | head -1)
-        [ -z "$status_dir" ] && status_dir=$(echo "$@" | grep -oE '[^ ]+/claude-pal/runs/[^:]+:/status' | cut -d: -f1 | head -1)
+        [ -z "$status_dir" ] && status_dir=$(echo "$@" | grep -oE '[^ ]+/sandbox-pal/runs/[^:]+:/status' | cut -d: -f1 | head -1)
         if [ -n "$status_dir" ] && [ -d "$status_dir" ]; then
             cat > "$status_dir/status.json" <<EOF_STATUS
 {"outcome":"success","phase":"complete","pr_url":"https://github.com/x/y/pull/99","pr_number":99,"failure_reason":null}
@@ -2078,14 +2078,14 @@ EOF
 - [ ] **Step 2: Run the test**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 ./tests/bats/bin/bats tests/test_skill_pal_implement.bats
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add tests/test_skill_pal_implement.bats
 git commit -m "test(plugin): pal-implement happy path smoke test with mocked docker"
 ```
@@ -2099,12 +2099,12 @@ git commit -m "test(plugin): pal-implement happy path smoke test with mocked doc
 ### Task 4.1: Plan file locator
 
 **Files:**
-- Create: `~/repos/claude-pal/lib/plan-locator.sh`
+- Create: `~/repos/sandbox-pal/lib/plan-locator.sh`
 
 - [ ] **Step 1: Write plan-locator.sh**
 
 ```bash
-cat > ~/repos/claude-pal/lib/plan-locator.sh <<'EOF'
+cat > ~/repos/sandbox-pal/lib/plan-locator.sh <<'EOF'
 # lib/plan-locator.sh
 # Locate the implementation plan file to publish.
 
@@ -2141,8 +2141,8 @@ EOF
 - [ ] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/plan-locator.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/plan-locator.sh
+cd ~/repos/sandbox-pal
 git add lib/plan-locator.sh
 git commit -m "feat(plugin): plan-locator for auto-detecting plan files"
 ```
@@ -2150,12 +2150,12 @@ git commit -m "feat(plugin): plan-locator for auto-detecting plan files"
 ### Task 4.2: Plan publisher
 
 **Files:**
-- Create: `~/repos/claude-pal/lib/publisher.sh`
+- Create: `~/repos/sandbox-pal/lib/publisher.sh`
 
 - [ ] **Step 1: Write publisher.sh**
 
 ```bash
-cat > ~/repos/claude-pal/lib/publisher.sh <<'EOF'
+cat > ~/repos/sandbox-pal/lib/publisher.sh <<'EOF'
 # lib/publisher.sh
 # Publish a plan file as an issue comment (with <!-- agent-plan --> marker).
 
@@ -2173,7 +2173,7 @@ pal_publish_plan() {
         local title
         title=$(awk '/^# /{sub(/^# /,""); print; exit}' "$plan_file")
         if [ -z "$title" ]; then
-            title="claude-pal implementation plan ($(date -I))"
+            title="sandbox-pal implementation plan ($(date -I))"
         fi
 
         local problem_summary="<!-- agent-plan -->
@@ -2211,8 +2211,8 @@ EOF
 - [ ] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/publisher.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/publisher.sh
+cd ~/repos/sandbox-pal
 git add lib/publisher.sh
 git commit -m "feat(plugin): plan publisher (new issue or comment on existing)"
 ```
@@ -2220,13 +2220,13 @@ git commit -m "feat(plugin): plan publisher (new issue or comment on existing)"
 ### Task 4.3: `/pal-plan` skill markdown
 
 **Files:**
-- Create: `~/repos/claude-pal/skills/pal-plan/SKILL.md`
+- Create: `~/repos/sandbox-pal/skills/pal-plan/SKILL.md`
 
 - [ ] **Step 1: Write SKILL.md**
 
 ```bash
-mkdir -p ~/repos/claude-pal/skills/pal-plan
-cat > ~/repos/claude-pal/skills/pal-plan/SKILL.md <<'EOF'
+mkdir -p ~/repos/sandbox-pal/skills/pal-plan
+cat > ~/repos/sandbox-pal/skills/pal-plan/SKILL.md <<'EOF'
 ---
 name: pal-plan
 description: Publish an implementation plan from the current conversation to a GitHub issue. Takes the most recent plan file in docs/superpowers/plans/ (or an explicit --file path) and posts it as a comment with <!-- agent-plan --> marker. Creates a new issue if no issue number given. Does NOT launch a container — provides a checkpoint to review the posted plan on GitHub before running /pal-implement.
@@ -2268,7 +2268,7 @@ EOF
 - [ ] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add skills/pal-plan/SKILL.md
 git commit -m "feat(plugin): pal-plan SKILL.md"
 ```
@@ -2276,12 +2276,12 @@ git commit -m "feat(plugin): pal-plan SKILL.md"
 ### Task 4.4: `/pal-plan` smoke test
 
 **Files:**
-- Create: `~/repos/claude-pal/tests/test_skill_pal_plan.bats`
+- Create: `~/repos/sandbox-pal/tests/test_skill_pal_plan.bats`
 
 - [ ] **Step 1: Write the test (mocks gh CLI)**
 
 ```bash
-cat > ~/repos/claude-pal/tests/test_skill_pal_plan.bats <<'EOF'
+cat > ~/repos/sandbox-pal/tests/test_skill_pal_plan.bats <<'EOF'
 #!/usr/bin/env bats
 load 'test_helper/bats-support/load'
 load 'test_helper/bats-assert/load'
@@ -2292,12 +2292,12 @@ setup() {
     export HOME="$TMPHOME"
     export XDG_CONFIG_HOME="$TMPHOME/.config"
     export GH_TOKEN="fake"
-    mkdir -p "$XDG_CONFIG_HOME/claude-pal"
-    cat > "$XDG_CONFIG_HOME/claude-pal/config.env" <<CONFIG
+    mkdir -p "$XDG_CONFIG_HOME/sandbox-pal"
+    cat > "$XDG_CONFIG_HOME/sandbox-pal/config.env" <<CONFIG
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fake
 GH_TOKEN=github_pat_fake
 CONFIG
-    chmod 600 "$XDG_CONFIG_HOME/claude-pal/config.env"
+    chmod 600 "$XDG_CONFIG_HOME/sandbox-pal/config.env"
 
     # Fake project with a plan file
     WORKDIR="$(mktemp -d)"
@@ -2366,14 +2366,14 @@ EOF
 - [ ] **Step 2: Run the tests**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 ./tests/bats/bin/bats tests/test_skill_pal_plan.bats
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add tests/test_skill_pal_plan.bats
 git commit -m "test(plugin): pal-plan coverage for new-issue and existing-issue flows"
 ```
@@ -2383,21 +2383,21 @@ git commit -m "test(plugin): pal-plan coverage for new-issue and existing-issue 
 Adds an optional entry-point slash command for the full ideation → PR flow. Depends on the `superpowers` plugin (soft check — falls back to a user-facing install hint if missing). Also tightens the `description` fields on `pal-plan` and `pal-implement` so Claude's natural-language skill-selector can match on phrases like "help me plan an issue", "have pal build this", etc.
 
 **Files:**
-- Create: `~/repos/claude-pal/commands/pal-brainstorm.md`
-- Edit: `~/repos/claude-pal/skills/pal-plan/SKILL.md` (description only)
-- Edit: `~/repos/claude-pal/skills/pal-implement/SKILL.md` (description only)
+- Create: `~/repos/sandbox-pal/commands/pal-brainstorm.md`
+- Edit: `~/repos/sandbox-pal/skills/pal-plan/SKILL.md` (description only)
+- Edit: `~/repos/sandbox-pal/skills/pal-implement/SKILL.md` (description only)
 
 **Background / design rationale** (so future-me doesn't relitigate):
 - Plugin commands live at `commands/<name>.md` at plugin root (not under `.claude-plugin/`).
-- Plugin skills/commands invoke as `/<plugin-name>:<name>` — so this one is `/claude-pal:pal-brainstorm`. Short form (`/pal-brainstorm`) only works for standalone skills, not plugins.
+- Plugin skills/commands invoke as `/<plugin-name>:<name>` — so this one is `/sandbox-pal:pal-brainstorm`. Short form (`/pal-brainstorm`) only works for standalone skills, not plugins.
 - Explicit slash invocation is the reliable path; natural-language invocation is supported but fragile per known Claude Code limitations (see GitHub issue #10768 era). Sharp `Use when ...` descriptions raise the NL hit rate but don't make it deterministic, which is why the explicit command exists.
 - No `dependencies`/`requires` field in `plugin.json`. Dependency on `superpowers` is communicated in-prompt and via README; Claude can't programmatically check installed plugins, so the "superpowers missing" fallback is soft-gated through the command body.
 
 - [ ] **Step 1: Write the command file**
 
 ```bash
-mkdir -p ~/repos/claude-pal/commands
-cat > ~/repos/claude-pal/commands/pal-brainstorm.md <<'EOF'
+mkdir -p ~/repos/sandbox-pal/commands
+cat > ~/repos/sandbox-pal/commands/pal-brainstorm.md <<'EOF'
 ---
 description: Use when the user wants to go from an idea to a pull request with pal — orchestrates the full flow (brainstorm → plan → publish → dispatch). Use when user says "plan an issue for pal", "have pal build this", "help me get pal to work on a feature", "brainstorm something for pal to implement", or similar. Depends on the superpowers plugin for the brainstorm and plan-writing steps.
 ---
@@ -2412,7 +2412,7 @@ Guide the user from an idea to a dispatched pal run that opens a PR.
 
 This flow depends on the `superpowers` plugin (provides `brainstorming` and `writing-plans` skills). If those skills are not listed in your current session's available skills, stop and tell the user:
 
-> The /claude-pal:pal-brainstorm flow uses skills from the `superpowers` plugin. Install it from the `claude-plugins-official` marketplace, then run /claude-pal:pal-brainstorm again.
+> The /sandbox-pal:pal-brainstorm flow uses skills from the `superpowers` plugin. Install it from the `claude-plugins-official` marketplace, then run /sandbox-pal:pal-brainstorm again.
 
 Do not attempt to proceed past this check if `superpowers:brainstorming` or `superpowers:writing-plans` are unavailable.
 
@@ -2421,9 +2421,9 @@ Do not attempt to proceed past this check if `superpowers:brainstorming` or `sup
 1. **Brainstorm.** Invoke `superpowers:brainstorming` with the user's seed idea ($ARGUMENTS) to explore intent, requirements, and design. Let the brainstorming skill drive — don't short-circuit it.
 2. **Write the plan.** Once the brainstorm converges, invoke `superpowers:writing-plans` to produce an implementation plan file under `docs/superpowers/plans/`.
 3. **Checkpoint.** Show the user the plan file path and ask them to confirm before publishing to GitHub. If they want revisions, loop back to writing-plans.
-4. **Publish.** Invoke the `pal-plan` skill (or `/claude-pal:pal-plan`) to post the plan as a GitHub issue comment. If the user hasn't named an existing issue, pal-plan will create a new one. Share the resulting issue URL with the user.
-5. **Confirm.** Ask the user to review the posted plan on GitHub and confirm before dispatching. Offer to run /claude-pal:pal-implement in sync or async mode.
-6. **Implement.** Invoke the `pal-implement` skill (or `/claude-pal:pal-implement <issue#>`) with `--async` if the user requested background execution. Otherwise run sync and stream the status to the user.
+4. **Publish.** Invoke the `pal-plan` skill (or `/sandbox-pal:pal-plan`) to post the plan as a GitHub issue comment. If the user hasn't named an existing issue, pal-plan will create a new one. Share the resulting issue URL with the user.
+5. **Confirm.** Ask the user to review the posted plan on GitHub and confirm before dispatching. Offer to run /sandbox-pal:pal-implement in sync or async mode.
+6. **Implement.** Invoke the `pal-implement` skill (or `/sandbox-pal:pal-implement <issue#>`) with `--async` if the user requested background execution. Otherwise run sync and stream the status to the user.
 
 ## Stopping points
 
@@ -2438,17 +2438,17 @@ EOF
 
 - [ ] **Step 2: Sharpen pal-plan's description for NL invocation**
 
-Edit the `description:` field in `~/repos/claude-pal/skills/pal-plan/SKILL.md` so Claude's skill-selector matches natural phrasing. Keep the body unchanged.
+Edit the `description:` field in `~/repos/sandbox-pal/skills/pal-plan/SKILL.md` so Claude's skill-selector matches natural phrasing. Keep the body unchanged.
 
 New description:
 
 ```
-description: Use when the user wants to publish an implementation plan to GitHub for pal to pick up. Takes the most recent plan file in docs/superpowers/plans/ (or an explicit --file path) and posts it as an issue comment with <!-- agent-plan --> marker. Creates a new issue if no issue number given. Use when user says "publish this plan", "post the plan to GitHub", "create an issue for pal", or has a plan file ready and wants pal to see it. Does NOT launch a container — it's a checkpoint before /claude-pal:pal-implement.
+description: Use when the user wants to publish an implementation plan to GitHub for pal to pick up. Takes the most recent plan file in docs/superpowers/plans/ (or an explicit --file path) and posts it as an issue comment with <!-- agent-plan --> marker. Creates a new issue if no issue number given. Use when user says "publish this plan", "post the plan to GitHub", "create an issue for pal", or has a plan file ready and wants pal to see it. Does NOT launch a container — it's a checkpoint before /sandbox-pal:pal-implement.
 ```
 
 - [ ] **Step 3: Sharpen pal-implement's description for NL invocation**
 
-Edit the `description:` field in `~/repos/claude-pal/skills/pal-implement/SKILL.md`:
+Edit the `description:` field in `~/repos/sandbox-pal/skills/pal-implement/SKILL.md`:
 
 ```
 description: Use when the user wants pal to actually start working on a GitHub issue. Launches an ephemeral Docker container that reads the plan from the issue and runs a gated pipeline (adversarial plan review → TDD implementation → post-impl review → opens PR). Use when user says "have pal implement this", "kick off pal on issue #N", "dispatch pal", "run the pal container on this issue", or similar. Sync by default; pass --async to background.
@@ -2457,8 +2457,8 @@ description: Use when the user wants pal to actually start working on a GitHub i
 - [ ] **Step 4: Validate manifest and run tests**
 
 ```bash
-claude plugin validate ~/repos/claude-pal
-cd ~/repos/claude-pal
+claude plugin validate ~/repos/sandbox-pal
+cd ~/repos/sandbox-pal
 ./tests/bats/bin/bats tests/
 shellcheck lib/*.sh image/opt/pal/lib/*.sh image/opt/pal/entrypoint.sh
 ```
@@ -2468,33 +2468,33 @@ All three must pass. No new bats test for the command itself — commands are ma
 - [ ] **Step 5: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add commands/pal-brainstorm.md skills/pal-plan/SKILL.md skills/pal-implement/SKILL.md
 git commit -m "feat(plugin): pal-brainstorm orchestrator command + sharpen NL descriptions"
 ```
 
-**Milestone:** Three user-visible entry points now exist — `/claude-pal:pal-brainstorm` (full flow), `/claude-pal:pal-plan` (publish a pre-written plan), `/claude-pal:pal-implement` (dispatch on an existing issue). Descriptions on the two skills are tuned for natural-language invocation so the typical interaction is "have pal build this" rather than explicit slash typing.
+**Milestone:** Three user-visible entry points now exist — `/sandbox-pal:pal-brainstorm` (full flow), `/sandbox-pal:pal-plan` (publish a pre-written plan), `/sandbox-pal:pal-implement` (dispatch on an existing issue). Descriptions on the two skills are tuned for natural-language invocation so the typical interaction is "have pal build this" rather than explicit slash typing.
 
 ### Task 4.6: Pivot to env-passthrough auth (no on-disk secrets file)
 
 **Context / rationale** (so the design decision is recorded).
 
-Prior design stored credentials in a 0600 `~/.config/claude-pal/config.env` that `pal_load_config` read from disk. Research during Phase 4 (see conversation notes + `anthropics/claude-code-action` docs, [The New Stack's Agent SDK interview](https://thenewstack.io/anthropic-agent-sdk-confusion/), and the Anthropic [Usage Policy update](https://www.anthropic.com/news/usage-policy-update)) surfaced two material issues:
+Prior design stored credentials in a 0600 `~/.config/sandbox-pal/config.env` that `pal_load_config` read from disk. Research during Phase 4 (see conversation notes + `anthropics/claude-code-action` docs, [The New Stack's Agent SDK interview](https://thenewstack.io/anthropic-agent-sdk-confusion/), and the Anthropic [Usage Policy update](https://www.anthropic.com/news/usage-policy-update)) surfaced two material issues:
 
 1. **ToS positioning.** Anthropic's Feb 2026 Consumer ToS clarification prohibits using subscription OAuth tokens in third-party tools. A personal-use carveout exists (public Anthropic employee statement). The carveout is clearest when the tool follows the documented env-var pattern used by `anthropics/claude-code-action` (export → `docker run -e`), rather than maintaining its own credential file.
 2. **Duplication / attack surface.** A plugin-managed 0600 file duplicates what the user already has to maintain in their shell profile for any other CLI (`gh`, `aws`, etc.). Surveyed community tooling (koogle/claudebox, textcortex/claude-code-sandbox, anthropics/claude-code-action, boxlite-ai/claudebox) overwhelmingly uses env passthrough + optional OS-native credential store, not a bespoke config file.
 
-**Redesign:** claude-pal reads `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` / `GH_TOKEN` from `$ENV` directly. No plugin-managed file. Users wire the exports into their shell profile once (or inherit from CI secrets). Phase 7 (keychain/Credential-Manager/pass) is deferred as future nice-to-have, since env-passthrough covers the canonical case and matches industry norms.
+**Redesign:** sandbox-pal reads `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` / `GH_TOKEN` from `$ENV` directly. No plugin-managed file. Users wire the exports into their shell profile once (or inherit from CI secrets). Phase 7 (keychain/Credential-Manager/pass) is deferred as future nice-to-have, since env-passthrough covers the canonical case and matches industry norms.
 
 **Files:**
-- Rewrite: `~/repos/claude-pal/lib/config.sh` — no file IO; assert required env vars only
-- Edit: `~/repos/claude-pal/lib/preflight.sh` — drop `pal_config_permissions_ok` + `pal_preflight_no_api_key_in_env`; keep single-auth-method check; update messages to reference env vars
-- Edit: `~/repos/claude-pal/tests/test_skill_pal_plan.bats` — `export` env vars instead of writing `config.env`
-- Edit: `~/repos/claude-pal/tests/test_skill_pal_implement.bats` — same
-- Create: `~/repos/claude-pal/commands/pal-setup.md` — guided walkthrough (prompts for credential type, generates OAuth token via `claude setup-token`, adds exports to shell profile, verifies)
-- Edit: `~/repos/claude-pal/README.md` — authentication section with one-time setup, OAuth vs API key guidance, ToS note
-- Edit: `~/repos/claude-pal/CLAUDE.md` — record the env-passthrough architecture so future sessions don't reinvent the file-based approach
-- Edit: `~/repos/claude-pal/docs/superpowers/plans/2026-04-18-claude-pal.md` — mark Phase 7 deferred (this task)
+- Rewrite: `~/repos/sandbox-pal/lib/config.sh` — no file IO; assert required env vars only
+- Edit: `~/repos/sandbox-pal/lib/preflight.sh` — drop `pal_config_permissions_ok` + `pal_preflight_no_api_key_in_env`; keep single-auth-method check; update messages to reference env vars
+- Edit: `~/repos/sandbox-pal/tests/test_skill_pal_plan.bats` — `export` env vars instead of writing `config.env`
+- Edit: `~/repos/sandbox-pal/tests/test_skill_pal_implement.bats` — same
+- Create: `~/repos/sandbox-pal/commands/pal-setup.md` — guided walkthrough (prompts for credential type, generates OAuth token via `claude setup-token`, adds exports to shell profile, verifies)
+- Edit: `~/repos/sandbox-pal/README.md` — authentication section with one-time setup, OAuth vs API key guidance, ToS note
+- Edit: `~/repos/sandbox-pal/CLAUDE.md` — record the env-passthrough architecture so future sessions don't reinvent the file-based approach
+- Edit: `~/repos/sandbox-pal/docs/superpowers/plans/2026-04-18-sandbox-pal.md` — mark Phase 7 deferred (this task)
 
 **Steps:**
 
@@ -2507,10 +2507,10 @@ Replace the file with:
 # shellcheck shell=bash
 # Verify required credentials are present in the process environment.
 #
-# claude-pal uses env-passthrough exclusively — this matches Anthropic's own
+# sandbox-pal uses env-passthrough exclusively — this matches Anthropic's own
 # anthropics/claude-code-action pattern. No on-disk secret file: users
 # export CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY) and GH_TOKEN in
-# their shell profile once, and claude-pal forwards them to the container.
+# their shell profile once, and sandbox-pal forwards them to the container.
 
 pal_load_config() {
     local missing=()
@@ -2520,7 +2520,7 @@ pal_load_config() {
     if [ ${#missing[@]} -gt 0 ]; then
         echo "pal: missing required environment variable(s): ${missing[*]}" >&2
         echo "pal: one-time setup: claude setup-token, then export CLAUDE_CODE_OAUTH_TOKEN=... and GH_TOKEN=... in ~/.bashrc" >&2
-        echo "pal: or: /claude-pal:pal-setup for a guided walkthrough" >&2
+        echo "pal: or: /sandbox-pal:pal-setup for a guided walkthrough" >&2
         return 1
     fi
 }
@@ -2546,7 +2546,7 @@ Keep the `HOME=$TMPHOME` / `XDG_*` redirection as defensive isolation.
 
 - [ ] **Step 4: Create `commands/pal-setup.md`**
 
-Frontmatter description tuned for NL invocation ("missing required environment variable", "how do I set up pal", "configure claude-pal"). Body walks through: detect current env state, pick credential type, detect shell, run `claude setup-token`, emit `export` lines to the right profile file, verify with a preflight snippet. Include a ToS reminder at the bottom.
+Frontmatter description tuned for NL invocation ("missing required environment variable", "how do I set up pal", "configure sandbox-pal"). Body walks through: detect current env state, pick credential type, detect shell, run `claude setup-token`, emit `export` lines to the right profile file, verify with a preflight snippet. Include a ToS reminder at the bottom.
 
 - [ ] **Step 5: Update `README.md` and `CLAUDE.md`**
 
@@ -2559,8 +2559,8 @@ Prepend a `**Status (2026-04-19):** Deferred...` note to Phase 7's heading in th
 - [ ] **Step 7: Verify and commit**
 
 ```bash
-claude plugin validate ~/repos/claude-pal
-cd ~/repos/claude-pal
+claude plugin validate ~/repos/sandbox-pal
+cd ~/repos/sandbox-pal
 ./tests/bats/bin/bats tests/
 shellcheck lib/*.sh image/opt/pal/lib/*.sh image/opt/pal/entrypoint.sh
 ```
@@ -2571,11 +2571,11 @@ All three green. Then commit in two logical chunks:
 git add lib/config.sh lib/preflight.sh tests/test_skill_pal_plan.bats tests/test_skill_pal_implement.bats
 git commit -m "refactor(plugin): pivot auth to env-passthrough (no config.env)"
 
-git add commands/pal-setup.md README.md CLAUDE.md docs/superpowers/plans/2026-04-18-claude-pal.md
+git add commands/pal-setup.md README.md CLAUDE.md docs/superpowers/plans/2026-04-18-sandbox-pal.md
 git commit -m "feat(plugin): pal-setup walkthrough + auth docs + defer Phase 7"
 ```
 
-**Milestone:** Auth model is aligned with Anthropic's documented pattern. Users run `claude setup-token` + add two `export` lines to their shell profile (or use `/claude-pal:pal-setup`) and they're ready to dispatch. No on-disk secrets managed by the plugin. Phase 7's OS-native credential integrations remain available as a future option if the design ever needs to go back to file storage.
+**Milestone:** Auth model is aligned with Anthropic's documented pattern. Users run `claude setup-token` + add two `export` lines to their shell profile (or use `/sandbox-pal:pal-setup`) and they're ready to dispatch. No on-disk secrets managed by the plugin. Phase 7's OS-native credential integrations remain available as a future option if the design ever needs to go back to file storage.
 
 ---
 
@@ -2588,17 +2588,17 @@ git commit -m "feat(plugin): pal-setup walkthrough + auth docs + defer Phase 7"
 ### Task 5.1: Cross-platform notifier
 
 **Files:**
-- Create: `~/repos/claude-pal/lib/notify.sh`
+- Create: `~/repos/sandbox-pal/lib/notify.sh`
 
 - [x] **Step 1: Write notify.sh**
 
 ```bash
-cat > ~/repos/claude-pal/lib/notify.sh <<'EOF'
+cat > ~/repos/sandbox-pal/lib/notify.sh <<'EOF'
 # lib/notify.sh
 # Cross-platform desktop notifier.
 
 pal_notify() {
-    local title="${1:-claude-pal}"
+    local title="${1:-sandbox-pal}"
     local message="$2"
 
     # Honor override
@@ -2642,8 +2642,8 @@ EOF
 - [x] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/notify.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/notify.sh
+cd ~/repos/sandbox-pal
 git add lib/notify.sh
 git commit -m "feat(skills): cross-platform desktop notifier (Linux/macOS/Windows)"
 ```
@@ -2651,7 +2651,7 @@ git commit -m "feat(skills): cross-platform desktop notifier (Linux/macOS/Window
 ### Task 5.2: Async launcher with watcher
 
 **Files:**
-- Modify: `~/repos/claude-pal/lib/launcher.sh`
+- Modify: `~/repos/sandbox-pal/lib/launcher.sh`
 
 - [x] **Step 1: Add async launch function to launcher.sh**
 
@@ -2667,7 +2667,7 @@ pal_launch_async() {
 
     local run_dir
     run_dir=$(pal_run_dir "$run_id")
-    local image_tag="${PAL_IMAGE_TAG:-claude-pal:latest}"
+    local image_tag="${PAL_IMAGE_TAG:-sandbox-pal:latest}"
 
     local per_repo_config=".pal/config.env"
     local per_repo_args=()
@@ -2713,14 +2713,14 @@ pal_launch_async() {
             pr_url=$(jq -r .pr_url "$run_dir/status.json" 2>/dev/null)
             case "$outcome" in
                 success)
-                    pal_notify "claude-pal: $run_id complete" "PR: $pr_url"
+                    pal_notify "sandbox-pal: $run_id complete" "PR: $pr_url"
                     ;;
                 *)
-                    pal_notify "claude-pal: $run_id $outcome" "Check /pal-status $run_id"
+                    pal_notify "sandbox-pal: $run_id $outcome" "Check /pal-status $run_id"
                     ;;
             esac
         else
-            pal_notify "claude-pal: $run_id exited" "No status.json — check /pal-logs $run_id"
+            pal_notify "sandbox-pal: $run_id exited" "No status.json — check /pal-logs $run_id"
         fi
     ) &
 
@@ -2733,8 +2733,8 @@ pal_launch_async() {
 - [x] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/launcher.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/launcher.sh
+cd ~/repos/sandbox-pal
 git add lib/launcher.sh
 git commit -m "feat(skills): async launcher with forked watcher and notification"
 ```
@@ -2742,7 +2742,7 @@ git commit -m "feat(skills): async launcher with forked watcher and notification
 ### Task 5.3: Wire --async into `/pal-implement`
 
 **Files:**
-- Modify: `~/repos/claude-pal/skills/pal-implement/SKILL.md`
+- Modify: `~/repos/sandbox-pal/skills/pal-implement/SKILL.md`
 
 - [x] **Step 1: Update SKILL.md to handle --async**
 
@@ -2760,7 +2760,7 @@ Update the "Steps" section to:
 - [x] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add skills/pal-implement/SKILL.md
 git commit -m "feat(skills): pal-implement now supports --async"
 ```
@@ -2768,14 +2768,14 @@ git commit -m "feat(skills): pal-implement now supports --async"
 ### Task 5.4: `/pal-status` skill
 
 **Files:**
-- Create: `~/repos/claude-pal/skills/pal-status/SKILL.md`
-- Create: `~/repos/claude-pal/lib/status-list.sh`
+- Create: `~/repos/sandbox-pal/skills/pal-status/SKILL.md`
+- Create: `~/repos/sandbox-pal/lib/status-list.sh`
 
 - [x] **Step 1: Write status-list.sh**
 
 ```bash
-mkdir -p ~/repos/claude-pal/skills/pal-status
-cat > ~/repos/claude-pal/lib/status-list.sh <<'EOF'
+mkdir -p ~/repos/sandbox-pal/skills/pal-status
+cat > ~/repos/sandbox-pal/lib/status-list.sh <<'EOF'
 # lib/status-list.sh
 # List runs and reconcile against docker ps.
 
@@ -2869,10 +2869,10 @@ EOF
 - [x] **Step 2: Write `/pal-status` SKILL.md**
 
 ```bash
-cat > ~/repos/claude-pal/skills/pal-status/SKILL.md <<'EOF'
+cat > ~/repos/sandbox-pal/skills/pal-status/SKILL.md <<'EOF'
 ---
 name: pal-status
-description: List claude-pal runs or show details on a specific one. Reconciles stale status against docker ps.
+description: List sandbox-pal runs or show details on a specific one. Reconciles stale status against docker ps.
 ---
 
 # pal-status
@@ -2900,8 +2900,8 @@ EOF
 - [x] **Step 3: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/status-list.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/status-list.sh
+cd ~/repos/sandbox-pal
 git add lib/status-list.sh skills/pal-status/SKILL.md
 git commit -m "feat(plugin): pal-status for listing/detailing/cleaning runs"
 ```
@@ -2909,16 +2909,16 @@ git commit -m "feat(plugin): pal-status for listing/detailing/cleaning runs"
 ### Task 5.5: `/pal-logs` skill
 
 **Files:**
-- Create: `~/repos/claude-pal/skills/pal-logs/SKILL.md`
+- Create: `~/repos/sandbox-pal/skills/pal-logs/SKILL.md`
 
 - [x] **Step 1: Write SKILL.md**
 
 ```bash
-mkdir -p ~/repos/claude-pal/skills/pal-logs
-cat > ~/repos/claude-pal/skills/pal-logs/SKILL.md <<'EOF'
+mkdir -p ~/repos/sandbox-pal/skills/pal-logs
+cat > ~/repos/sandbox-pal/skills/pal-logs/SKILL.md <<'EOF'
 ---
 name: pal-logs
-description: Tail logs for a claude-pal run. Supports --follow to stream live output.
+description: Tail logs for a sandbox-pal run. Supports --follow to stream live output.
 ---
 
 # pal-logs
@@ -2946,7 +2946,7 @@ EOF
 - [x] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add skills/pal-logs/SKILL.md
 git commit -m "feat(plugin): pal-logs skill"
 ```
@@ -2954,8 +2954,8 @@ git commit -m "feat(plugin): pal-logs skill"
 ### Task 5.6: `/pal-cancel` skill
 
 **Files:**
-- Create: `~/repos/claude-pal/skills/pal-cancel/SKILL.md`
-- Modify: `~/repos/claude-pal/lib/launcher.sh`
+- Create: `~/repos/sandbox-pal/skills/pal-cancel/SKILL.md`
+- Modify: `~/repos/sandbox-pal/lib/launcher.sh`
 
 - [x] **Step 1: Add pal_cancel to launcher.sh**
 
@@ -3014,11 +3014,11 @@ EOF_CANCEL
 - [x] **Step 2: Write SKILL.md**
 
 ```bash
-mkdir -p ~/repos/claude-pal/skills/pal-cancel
-cat > ~/repos/claude-pal/skills/pal-cancel/SKILL.md <<'EOF'
+mkdir -p ~/repos/sandbox-pal/skills/pal-cancel
+cat > ~/repos/sandbox-pal/skills/pal-cancel/SKILL.md <<'EOF'
 ---
 name: pal-cancel
-description: Cancel an in-flight claude-pal run. Sends SIGTERM (10s grace) then SIGKILL.
+description: Cancel an in-flight sandbox-pal run. Sends SIGTERM (10s grace) then SIGKILL.
 ---
 
 # pal-cancel
@@ -3044,8 +3044,8 @@ EOF
 - [x] **Step 3: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/launcher.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/launcher.sh
+cd ~/repos/sandbox-pal
 git add skills/pal-cancel/SKILL.md lib/launcher.sh
 git commit -m "feat(plugin): pal-cancel for killing in-flight runs"
 ```
@@ -3063,13 +3063,13 @@ git commit -m "feat(plugin): pal-cancel for killing in-flight runs"
 ### Task 6.1: `/pal-revise` skill markdown
 
 **Files:**
-- Create: `~/repos/claude-pal/skills/pal-revise/SKILL.md`
+- Create: `~/repos/sandbox-pal/skills/pal-revise/SKILL.md`
 
 - [ ] **Step 1: Write SKILL.md**
 
 ```bash
-mkdir -p ~/repos/claude-pal/skills/pal-revise
-cat > ~/repos/claude-pal/skills/pal-revise/SKILL.md <<'EOF'
+mkdir -p ~/repos/sandbox-pal/skills/pal-revise
+cat > ~/repos/sandbox-pal/skills/pal-revise/SKILL.md <<'EOF'
 ---
 name: pal-revise
 description: Launch an ephemeral Docker container to address PR review feedback. Fetches PR branch and review comments, runs a focused implementation pass to address concerns, pushes new commits to the PR.
@@ -3116,7 +3116,7 @@ EOF
 - [ ] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add skills/pal-revise/SKILL.md
 git commit -m "feat(plugin): pal-revise SKILL.md"
 ```
@@ -3124,12 +3124,12 @@ git commit -m "feat(plugin): pal-revise SKILL.md"
 ### Task 6.2: End-to-end revise test
 
 **Files:**
-- Create: `~/repos/claude-pal/tests/test_revise_smoke.bats`
+- Create: `~/repos/sandbox-pal/tests/test_revise_smoke.bats`
 
 - [ ] **Step 1: Write the test**
 
 ```bash
-cat > ~/repos/claude-pal/tests/test_revise_smoke.bats <<'EOF'
+cat > ~/repos/sandbox-pal/tests/test_revise_smoke.bats <<'EOF'
 #!/usr/bin/env bats
 load 'test_helper/bats-support/load'
 load 'test_helper/bats-assert/load'
@@ -3142,7 +3142,7 @@ setup() {
     : "${PAL_TEST_PR_WITH_REVIEW:?set PAL_TEST_PR_WITH_REVIEW to a PR# with CHANGES_REQUESTED review}"
     : "${CLAUDE_CODE_OAUTH_TOKEN:?}"
     : "${GH_TOKEN:?}"
-    IMAGE_TAG="claude-pal:test-revise-$RANDOM"
+    IMAGE_TAG="sandbox-pal:test-revise-$RANDOM"
     STATUS_DIR="$(mktemp -d)"
 }
 
@@ -3171,7 +3171,7 @@ EOF
 - [ ] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add tests/test_revise_smoke.bats
 git commit -m "test(container): end-to-end revise pipeline test"
 ```
@@ -3182,14 +3182,14 @@ git commit -m "test(container): end-to-end revise pipeline test"
 
 ## Phase 7: Cross-platform hardening — **DEFERRED**
 
-**Status (2026-04-19):** Deferred as "future nice-to-have." Task 4.6 pivoted claude-pal to env-passthrough (credentials read from the process environment, not a plugin-managed file), which matches Anthropic's own `anthropics/claude-code-action` pattern. The original driver for Phase 7 — a 0600 `config.env` on disk that would benefit from OS-native credential stores — no longer exists. Users today export `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY` and `GH_TOKEN` in their shell profile once; the plugin reads from `$ENV` at dispatch time. Shell-profile storage is functionally equivalent to `~/.aws/credentials` or `~/.config/gh/hosts.yml`, which the industry accepts as a default.
+**Status (2026-04-19):** Deferred as "future nice-to-have." Task 4.6 pivoted sandbox-pal to env-passthrough (credentials read from the process environment, not a plugin-managed file), which matches Anthropic's own `anthropics/claude-code-action` pattern. The original driver for Phase 7 — a 0600 `config.env` on disk that would benefit from OS-native credential stores — no longer exists. Users today export `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY` and `GH_TOKEN` in their shell profile once; the plugin reads from `$ENV` at dispatch time. Shell-profile storage is functionally equivalent to `~/.aws/credentials` or `~/.config/gh/hosts.yml`, which the industry accepts as a default.
 
-The tasks below are kept for reference in case claude-pal later reintroduces a file-based credential path or becomes distributable as a multi-user service. Do not execute them unless that design change happens first.
+The tasks below are kept for reference in case sandbox-pal later reintroduces a file-based credential path or becomes distributable as a multi-user service. Do not execute them unless that design change happens first.
 
 ### Task 7.1: macOS Keychain loader
 
 **Files:**
-- Modify: `~/repos/claude-pal/lib/config.sh`
+- Modify: `~/repos/sandbox-pal/lib/config.sh`
 
 - [ ] **Step 1: Add Keychain helpers**
 
@@ -3201,7 +3201,7 @@ pal_try_macos_keychain() {
     [ "$(uname -s)" != "Darwin" ] && return 1
 
     local oauth
-    oauth=$(security find-generic-password -a "$USER" -s claude-pal-oauth -w 2>/dev/null) || return 1
+    oauth=$(security find-generic-password -a "$USER" -s sandbox-pal-oauth -w 2>/dev/null) || return 1
     if [ -n "$oauth" ]; then
         export CLAUDE_CODE_OAUTH_TOKEN="$oauth"
         return 0
@@ -3241,8 +3241,8 @@ pal_load_config() {
 - [ ] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/config.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/config.sh
+cd ~/repos/sandbox-pal
 git add lib/config.sh
 git commit -m "feat(skills): auto-detect macOS Keychain-stored OAuth token"
 ```
@@ -3250,7 +3250,7 @@ git commit -m "feat(skills): auto-detect macOS Keychain-stored OAuth token"
 ### Task 7.2: Windows Credential Manager loader
 
 **Files:**
-- Modify: `~/repos/claude-pal/lib/config.sh`
+- Modify: `~/repos/sandbox-pal/lib/config.sh`
 
 - [ ] **Step 1: Add Windows Credential Manager helper**
 
@@ -3267,7 +3267,7 @@ pal_try_windows_credential_manager() {
     local oauth
     oauth=$(powershell.exe -NoProfile -Command "
         try {
-            \$cred = Get-StoredCredential -Target 'claude-pal-oauth' -ErrorAction Stop
+            \$cred = Get-StoredCredential -Target 'sandbox-pal-oauth' -ErrorAction Stop
             [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR(\$cred.Password))
         } catch { '' }
     " 2>/dev/null | tr -d '\r\n') || return 1
@@ -3305,8 +3305,8 @@ pal_load_config() {
 - [ ] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/config.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/config.sh
+cd ~/repos/sandbox-pal
 git add lib/config.sh
 git commit -m "feat(skills): auto-detect Windows Credential Manager OAuth token"
 ```
@@ -3314,7 +3314,7 @@ git commit -m "feat(skills): auto-detect Windows Credential Manager OAuth token"
 ### Task 7.3: Linux `pass` opt-in integration
 
 **Files:**
-- Modify: `~/repos/claude-pal/lib/config.sh`
+- Modify: `~/repos/sandbox-pal/lib/config.sh`
 
 - [ ] **Step 1: Add pass support via PAL_CRED_SOURCE env**
 
@@ -3360,8 +3360,8 @@ pal_load_config() {
 - [ ] **Step 2: shellcheck and commit**
 
 ```bash
-shellcheck ~/repos/claude-pal/lib/config.sh
-cd ~/repos/claude-pal
+shellcheck ~/repos/sandbox-pal/lib/config.sh
+cd ~/repos/sandbox-pal
 git add lib/config.sh
 git commit -m "feat(skills): opt-in 'pass' integration via PAL_CRED_SOURCE=pass:..."
 ```
@@ -3369,7 +3369,7 @@ git commit -m "feat(skills): opt-in 'pass' integration via PAL_CRED_SOURCE=pass:
 ### Task 7.4: Windows NTFS ACL check
 
 **Files:**
-- Modify: `~/repos/claude-pal/lib/config.sh`
+- Modify: `~/repos/sandbox-pal/lib/config.sh`
 
 - [ ] **Step 1: Implement NTFS ACL validation in pal_config_permissions_ok**
 
@@ -3394,7 +3394,7 @@ Replace the Windows branch in `pal_config_permissions_ok` with:
 - [ ] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add lib/config.sh
 git commit -m "feat(skills): validate NTFS ACL on config.env (Windows)"
 ```
@@ -3408,8 +3408,8 @@ git commit -m "feat(skills): validate NTFS ACL on config.env (Windows)"
 **Sequencing note (2026-04-19):** Phase 8 was executed before Phases 5 and 6 to validate the install/setup story. Live end-to-end dispatch passed (PR #27 on `Frightful-Games/recipe-manager-demo`). v0.4.0 tagged. A Phase 8-refresh pass after 5/6 will extend `docs/install.md` and CHANGELOG with the async/revise surface area.
 
 **Feature set assumed built (pre-Phase 5/6):**
-- Skills: `/claude-pal:pal-plan`, `/claude-pal:pal-implement` (sync only)
-- Commands: `/claude-pal:pal-brainstorm` (depends on `superpowers` plugin), `/claude-pal:pal-setup`
+- Skills: `/sandbox-pal:pal-plan`, `/sandbox-pal:pal-implement` (sync only)
+- Commands: `/sandbox-pal:pal-brainstorm` (depends on `superpowers` plugin), `/sandbox-pal:pal-setup`
 - Container pipeline: adversarial review → TDD implement → post-impl review → PR
 - Auth: env-passthrough only (no on-disk secrets file — see Task 4.6)
 
@@ -3421,23 +3421,23 @@ git commit -m "feat(skills): validate NTFS ACL on config.env (Windows)"
 ### Task 8.1: Install guide
 
 **Files:**
-- Create: `~/repos/claude-pal/docs/install.md`
+- Create: `~/repos/sandbox-pal/docs/install.md`
 
 Install guide must be written against the actually-built feature set (see Phase 8 heading). Env-passthrough auth only; no `config.env` file; no async/revise/status/logs/cancel skills. Those land in Phase 5/6 and a later Phase 8-refresh.
 
 - [ ] **Step 1: Write `docs/install.md`**
 
 ```markdown
-# Installing claude-pal
+# Installing sandbox-pal
 
-claude-pal is a Claude Code plugin that launches a Docker container to run the `claude` CLI non-interactively against GitHub issues. Everything runs on your host — no cloud service component.
+sandbox-pal is a Claude Code plugin that launches a Docker container to run the `claude` CLI non-interactively against GitHub issues. Everything runs on your host — no cloud service component.
 
 ## Prerequisites
 
 - **Docker** 20+ (Docker Desktop on macOS/Windows; Docker Engine on Linux). `docker info` must succeed from your shell.
 - **Claude Code CLI** installed on your host and logged in interactively at least once (`claude` in a terminal).
 - **Git** and **`gh`** (GitHub CLI) installed.
-- **Full-disk encryption** enabled on the host (LUKS / FileVault / BitLocker) — documented prerequisite, not enforced by claude-pal.
+- **Full-disk encryption** enabled on the host (LUKS / FileVault / BitLocker) — documented prerequisite, not enforced by sandbox-pal.
 - **A Claude Pro / Max / Team / Enterprise subscription** (for OAuth) OR an **Anthropic Console API key**.
 
 ### Windows additional prerequisites
@@ -3453,21 +3453,21 @@ claude-pal is a Claude Code plugin that launches a Docker container to run the `
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/jnurre64/claude-pal.git ~/repos/claude-pal
-cd ~/repos/claude-pal
+git clone https://github.com/jnurre64/sandbox-pal.git ~/repos/sandbox-pal
+cd ~/repos/sandbox-pal
 ```
 
 ### 2. Build the container image
 
 ```bash
 ./scripts/build-image.sh
-# → builds claude-pal:latest on your local Docker daemon
+# → builds sandbox-pal:latest on your local Docker daemon
 ```
 
 Verify:
 
 ```bash
-docker images claude-pal
+docker images sandbox-pal
 ```
 
 ### 3. Generate credentials
@@ -3491,13 +3491,13 @@ docker images claude-pal
 
 ### 4. Export credentials in your shell profile
 
-claude-pal reads credentials from the process environment at dispatch time — there is no `config.env` file managed by the plugin. This matches Anthropic's documented [`claude-code-action`](https://github.com/anthropics/claude-code-action) pattern.
+sandbox-pal reads credentials from the process environment at dispatch time — there is no `config.env` file managed by the plugin. This matches Anthropic's documented [`claude-code-action`](https://github.com/anthropics/claude-code-action) pattern.
 
 **Linux / macOS (bash):**
 ```bash
 cat >> ~/.bashrc <<'EOF'
 
-# claude-pal
+# sandbox-pal
 export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...paste-token-here...
 export GH_TOKEN=github_pat_...paste-PAT-here...
 EOF
@@ -3515,31 +3515,31 @@ Same for `~/.zshrc` (zsh). Use `set -x CLAUDE_CODE_OAUTH_TOKEN ...` syntax for f
 
 If you prefer an API key, substitute `CLAUDE_CODE_OAUTH_TOKEN` with `ANTHROPIC_API_KEY`. **Set exactly one of the two** — setting both is an error (preflight will reject it).
 
-Alternative: once claude-pal is loaded as a plugin (step 5), run `/claude-pal:pal-setup` for a guided walkthrough.
+Alternative: once sandbox-pal is loaded as a plugin (step 5), run `/sandbox-pal:pal-setup` for a guided walkthrough.
 
-### 5. Load claude-pal as a Claude Code plugin
+### 5. Load sandbox-pal as a Claude Code plugin
 
-claude-pal is a Claude Code plugin (manifest at `.claude-plugin/plugin.json`, shared libs at plugin-root `lib/`, skills under `skills/pal-*/SKILL.md`, commands under `commands/*.md`). It must be loaded *as a plugin* so `${CLAUDE_PLUGIN_ROOT}` is populated — do NOT copy `skills/pal-*` into `~/.claude/skills/`; the `lib/` sourcing inside each SKILL.md will fail.
+sandbox-pal is a Claude Code plugin (manifest at `.claude-plugin/plugin.json`, shared libs at plugin-root `lib/`, skills under `skills/pal-*/SKILL.md`, commands under `commands/*.md`). It must be loaded *as a plugin* so `${CLAUDE_PLUGIN_ROOT}` is populated — do NOT copy `skills/pal-*` into `~/.claude/skills/`; the `lib/` sourcing inside each SKILL.md will fail.
 
 **Developer / local-only (recommended today):**
 
 ```bash
 # Validate the manifest (fast, no session needed)
-claude plugin validate ~/repos/claude-pal
+claude plugin validate ~/repos/sandbox-pal
 # → "✔ Validation passed"
 
 # Load for one session at a time
-claude --plugin-dir ~/repos/claude-pal
+claude --plugin-dir ~/repos/sandbox-pal
 ```
 
-`--plugin-dir` is scoped to the one `claude` session. Inside that session, `/plugin` lists `claude-pal` and `/skills` lists `pal-implement` and `pal-plan`. Persistent / marketplace install is out of scope for v0.x.
+`--plugin-dir` is scoped to the one `claude` session. Inside that session, `/plugin` lists `sandbox-pal` and `/skills` lists `pal-implement` and `pal-plan`. Persistent / marketplace install is out of scope for v0.x.
 
 ### 6. Verify
 
-Inside a `claude --plugin-dir ~/repos/claude-pal` session:
+Inside a `claude --plugin-dir ~/repos/sandbox-pal` session:
 
 ```
-/plugin          # should show claude-pal as loaded
+/plugin          # should show sandbox-pal as loaded
 /skills          # should list pal-plan and pal-implement
 ```
 
@@ -3556,11 +3556,11 @@ GH_TOKEN="$GH_TOKEN" gh auth status   # should succeed
 
 ```
 # Inside the claude --plugin-dir session, from a checkout of a GitHub repo the PAT can access:
-/claude-pal:pal-plan
+/sandbox-pal:pal-plan
 # → publishes the most recent docs/superpowers/plans/*.md file as a new issue
 # → prints the issue URL
 
-/claude-pal:pal-implement <the-issue-number>
+/sandbox-pal:pal-implement <the-issue-number>
 # → runs preflight checks
 # → launches the container (adversarial review → TDD → post-impl review → PR)
 # → prints the PR URL on success
@@ -3578,11 +3578,11 @@ Watch for errors at each stage. Common failures are covered below.
 | `Claude Code is using WSL's bash, not Git Bash` (Windows) | WSL precedence in Claude Code settings | Set `CLAUDE_CODE_GIT_BASH_PATH` in `~/.claude/settings.json` (see Prerequisites) |
 | `gh auth status` fails | Expired PAT or missing scopes | Re-issue the PAT per step 3 |
 | Container network failures | Firewall allowlist too narrow for a private registry | Add entries to `PAL_ALLOWLIST_EXTRA_DOMAINS` in the target repo's `.pal/config.env` |
-| `/claude-pal:pal-brainstorm` stops with "install superpowers" | `superpowers` plugin not loaded in the session | `claude --plugin-dir ~/repos/claude-pal --plugin-dir <path-to-superpowers>` — or skip `pal-brainstorm` and use `/claude-pal:pal-plan` directly on a plan you already have |
+| `/sandbox-pal:pal-brainstorm` stops with "install superpowers" | `superpowers` plugin not loaded in the session | `claude --plugin-dir ~/repos/sandbox-pal --plugin-dir <path-to-superpowers>` — or skip `pal-brainstorm` and use `/sandbox-pal:pal-plan` directly on a plan you already have |
 
 ## Terms of Service
 
-Claude subscription OAuth tokens (`sk-ant-oat01-*`) are for personal use only per Anthropic's Consumer Terms of Service (Feb 2026 update). Do **not** redistribute your token, commit it to a repo, or deploy claude-pal as a shared service for others using someone else's subscription. For commercial or multi-user scenarios, use an `ANTHROPIC_API_KEY` from the Console instead.
+Claude subscription OAuth tokens (`sk-ant-oat01-*`) are for personal use only per Anthropic's Consumer Terms of Service (Feb 2026 update). Do **not** redistribute your token, commit it to a repo, or deploy sandbox-pal as a shared service for others using someone else's subscription. For commercial or multi-user scenarios, use an `ANTHROPIC_API_KEY` from the Console instead.
 
 See: https://www.anthropic.com/legal/usage-policy
 
@@ -3590,27 +3590,27 @@ See: https://www.anthropic.com/legal/usage-policy
 
 v0.4.0 ships the core flow (plan → implement → PR) in sync mode. Planned for later releases:
 
-- Async mode + `/claude-pal:pal-status`, `/claude-pal:pal-logs`, `/claude-pal:pal-cancel` (Phase 5)
-- `/claude-pal:pal-revise` for PR-review follow-ups (Phase 6)
+- Async mode + `/sandbox-pal:pal-status`, `/sandbox-pal:pal-logs`, `/sandbox-pal:pal-cancel` (Phase 5)
+- `/sandbox-pal:pal-revise` for PR-review follow-ups (Phase 6)
 - OS-native credential stores — macOS Keychain, Windows Credential Manager, Linux `pass` (Phase 7 — deferred)
 ```
 
 - [ ] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add docs/install.md
 git commit -m "docs: install guide for v0.4 (env-passthrough, sync-only)"
 ```
 
 - [x] **Step 3: Credential prep for the live test**
 
-Per user memory (`reference_github_finegrained_pat_collaborator.md`), the pennyworth-bot PAT is already exported in `~/.bashrc` — but under the name `GITHUB_TOKEN`, not `GH_TOKEN`. That var is load-bearing for the user's MCP github server, interactive `gh` for Frightful-Games repos, and the bot systemd service; do NOT rename or remove it. Add an alias line so claude-pal sees what it expects while everything else keeps working:
+Per user memory (`reference_github_finegrained_pat_collaborator.md`), the pennyworth-bot PAT is already exported in `~/.bashrc` — but under the name `GITHUB_TOKEN`, not `GH_TOKEN`. That var is load-bearing for the user's MCP github server, interactive `gh` for Frightful-Games repos, and the bot systemd service; do NOT rename or remove it. Add an alias line so sandbox-pal sees what it expects while everything else keeps working:
 
 ```bash
 # Confirm with the user before editing their ~/.bashrc
 echo '' >> ~/.bashrc
-echo '# claude-pal reads GH_TOKEN; alias to the pennyworth-bot PAT that is already exported as GITHUB_TOKEN' >> ~/.bashrc
+echo '# sandbox-pal reads GH_TOKEN; alias to the pennyworth-bot PAT that is already exported as GITHUB_TOKEN' >> ~/.bashrc
 echo 'export GH_TOKEN="$GITHUB_TOKEN"' >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -3645,11 +3645,11 @@ If that call 404s, stop and tell the user to add the repo to the PAT's access li
 
 - [x] **Step 4: Live validation** (the point of running Phase 8 now)
 
-Open a fresh `claude --plugin-dir ~/repos/claude-pal` session (or `--plugin-dir ~/repos/claude-pal --plugin-dir <path-to-superpowers>` to include the `superpowers` plugin for `/claude-pal:pal-brainstorm`). Follow `docs/install.md` end-to-end against `Frightful-Games/recipe-manager-demo` using the credentials prepared in Step 3. Acceptance criteria:
+Open a fresh `claude --plugin-dir ~/repos/sandbox-pal` session (or `--plugin-dir ~/repos/sandbox-pal --plugin-dir <path-to-superpowers>` to include the `superpowers` plugin for `/sandbox-pal:pal-brainstorm`). Follow `docs/install.md` end-to-end against `Frightful-Games/recipe-manager-demo` using the credentials prepared in Step 3. Acceptance criteria:
 
 1. Install guide steps 1–6 produce no ambiguity or missing info.
-2. `/claude-pal:pal-plan` publishes a plan file as a GitHub issue comment on `Frightful-Games/recipe-manager-demo` (or creates a new issue if no issue number given).
-3. `/claude-pal:pal-implement <#>` runs the container, goes through the gated pipeline, and opens a real PR on the repo.
+2. `/sandbox-pal:pal-plan` publishes a plan file as a GitHub issue comment on `Frightful-Games/recipe-manager-demo` (or creates a new issue if no issue number given).
+3. `/sandbox-pal:pal-implement <#>` runs the container, goes through the gated pipeline, and opens a real PR on the repo.
 4. Any rough edges get fixed in `docs/install.md` (and in the plugin's libs/commands if appropriate) and re-validated before marking Step 4 complete.
 
 Do NOT mark Task 8.1 complete until the live round-trip produces a merged-ready PR URL on `Frightful-Games/recipe-manager-demo`.
@@ -3659,17 +3659,17 @@ Do NOT mark Task 8.1 complete until the live round-trip produces a merged-ready 
 Under the env-passthrough redesign (Task 4.6), there is no plugin-level `config.env` file — credentials are env vars in the user's shell profile. Only the per-repo non-secret config file remains, and an example of it belongs in the repo.
 
 **Files:**
-- Create: `~/repos/claude-pal/.pal/config.env.example`
+- Create: `~/repos/sandbox-pal/.pal/config.env.example`
 
 - [x] **Step 1: Write `.pal/config.env.example`**
 
 ```bash
-mkdir -p ~/repos/claude-pal/.pal
-cat > ~/repos/claude-pal/.pal/config.env.example <<'EOF'
-# Per-repo claude-pal config — non-secret only.
+mkdir -p ~/repos/sandbox-pal/.pal
+cat > ~/repos/sandbox-pal/.pal/config.env.example <<'EOF'
+# Per-repo sandbox-pal config — non-secret only.
 # Copy to <your-project>/.pal/config.env and commit to your project repo.
 # Credentials (CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, GH_TOKEN) live in
-# your shell profile, NOT here — see docs/install.md in the claude-pal repo.
+# your shell profile, NOT here — see docs/install.md in the sandbox-pal repo.
 
 # Test commands
 # AGENT_TEST_COMMAND=bun test
@@ -3698,7 +3698,7 @@ EOF
 - [x] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add .pal/config.env.example
 git commit -m "docs: add per-repo .pal/config.env example (non-secret)"
 ```
@@ -3706,12 +3706,12 @@ git commit -m "docs: add per-repo .pal/config.env example (non-secret)"
 ### Task 8.3: Upstream drift check script
 
 **Files:**
-- Create: `~/repos/claude-pal/scripts/diff-upstream.sh`
+- Create: `~/repos/sandbox-pal/scripts/diff-upstream.sh`
 
 - [x] **Step 1: Write diff-upstream.sh**
 
 ```bash
-cat > ~/repos/claude-pal/scripts/diff-upstream.sh <<'EOF'
+cat > ~/repos/sandbox-pal/scripts/diff-upstream.sh <<'EOF'
 #!/bin/bash
 # Diff vendored files against a local claude-agent-dispatch checkout to find upstream drift.
 
@@ -3753,13 +3753,13 @@ done
 
 exit $exit_code
 EOF
-chmod +x ~/repos/claude-pal/scripts/diff-upstream.sh
+chmod +x ~/repos/sandbox-pal/scripts/diff-upstream.sh
 ```
 
 - [x] **Step 2: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add scripts/diff-upstream.sh
 git commit -m "scripts: diff-upstream.sh for tracking vendored file drift"
 ```
@@ -3769,7 +3769,7 @@ git commit -m "scripts: diff-upstream.sh for tracking vendored file drift"
 The README was already expanded in Task 4.6 with the auth section, ToS note, plugin entry points, and a pointer to `docs/superpowers/specs/...` for design. This task verifies `README.md` and `docs/install.md` agree (no drift) and adds two missing sections identified during the Phase 8 write-up.
 
 **Files:**
-- Modify: `~/repos/claude-pal/README.md`
+- Modify: `~/repos/sandbox-pal/README.md`
 
 - [x] **Step 1: Diff README vs install guide, fix any drift**
 
@@ -3783,8 +3783,8 @@ Append (above the existing "Authentication" section):
 ## What it does
 
 1. You brainstorm and write an implementation plan (ideally via `superpowers:brainstorming` + `superpowers:writing-plans`).
-2. You run `/claude-pal:pal-plan` to post that plan to a GitHub issue with an `<!-- agent-plan -->` marker.
-3. You run `/claude-pal:pal-implement <issue#>` to launch an ephemeral Docker container that:
+2. You run `/sandbox-pal:pal-plan` to post that plan to a GitHub issue with an `<!-- agent-plan -->` marker.
+3. You run `/sandbox-pal:pal-implement <issue#>` to launch an ephemeral Docker container that:
    - Runs an **adversarial plan review** (fresh Claude session, read-only, verifies the plan matches the issue)
    - Implements the plan using **TDD with a retry loop** that feeds failing tests back to the model
    - Runs a **post-implementation review** (fresh session, read-only, checks the diff for scope creep / test quality)
@@ -3799,13 +3799,13 @@ See [`docs/install.md`](docs/install.md).
 
 ## Relationship to `claude-pal-action`
 
-Sibling project. `claude-pal-action` (formerly `claude-agent-dispatch`) runs the same pipeline shape on self-hosted GitHub Actions runners for team / shared use. claude-pal is personal, local, and triggered from a Claude Code session rather than GitHub labels. claude-pal vendors the review-gate prompts and orchestration library from upstream — see `UPSTREAM.md`.
+Sibling project. `claude-pal-action` (formerly `claude-agent-dispatch`) runs the same pipeline shape on self-hosted GitHub Actions runners for team / shared use. sandbox-pal is personal, local, and triggered from a Claude Code session rather than GitHub labels. sandbox-pal vendors the review-gate prompts and orchestration library from upstream — see `UPSTREAM.md`.
 ```
 
 - [x] **Step 3: Commit**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add README.md
 git commit -m "docs(readme): add 'What it does' and 'Getting started' sections"
 ```
@@ -3815,8 +3815,8 @@ git commit -m "docs(readme): add 'What it does' and 'Getting started' sections"
 Ships the partial release milestone: core flow (plan → sync implement → PR) with install guide and live-validated end-to-end. v1.0.0 lands after Phases 5 + 6 + Phase 8-refresh.
 
 **Files:**
-- Create: `~/repos/claude-pal/CHANGELOG.md`
-- Update: `~/repos/claude-pal/.claude-plugin/plugin.json` — bump `version` from `0.1.0` to `0.4.0`
+- Create: `~/repos/sandbox-pal/CHANGELOG.md`
+- Update: `~/repos/sandbox-pal/.claude-plugin/plugin.json` — bump `version` from `0.1.0` to `0.4.0`
 
 - [x] **Step 1: Write CHANGELOG**
 
@@ -3829,8 +3829,8 @@ First dogfood-ready release. Ships the core flow from an ideation session to an 
 
 ### Added
 - **Plugin packaging** — `.claude-plugin/plugin.json`, shared libs at plugin-root `lib/`, skills under `skills/`, commands under `commands/`. Loads via `claude --plugin-dir`.
-- **Skills:** `/claude-pal:pal-plan`, `/claude-pal:pal-implement` (sync mode)
-- **Commands:** `/claude-pal:pal-brainstorm` (orchestrator for the full flow; depends on the `superpowers` plugin), `/claude-pal:pal-setup` (guided credential walkthrough)
+- **Skills:** `/sandbox-pal:pal-plan`, `/sandbox-pal:pal-implement` (sync mode)
+- **Commands:** `/sandbox-pal:pal-brainstorm` (orchestrator for the full flow; depends on the `superpowers` plugin), `/sandbox-pal:pal-setup` (guided credential walkthrough)
 - **Container pipeline:** adversarial plan review → TDD implement with retry loop → post-impl review → retry once on concerns → push branch + open PR
 - **Auth: env-passthrough only** — reads `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) + `GH_TOKEN` from the process env, forwards to container at `docker run -e`. No on-disk secrets file. Matches Anthropic's `claude-code-action` pattern.
 - **Preflight checks** — auth present, single auth method, Docker reachable, Windows bash, `gh auth status`, no-double-dispatch lock
@@ -3840,8 +3840,8 @@ First dogfood-ready release. Ships the core flow from an ideation session to an 
 ### Documentation
 - `docs/install.md` — install guide
 - `README.md` — project overview + auth + ToS
-- `docs/superpowers/specs/2026-04-18-claude-pal-design.md` — full design
-- `docs/superpowers/plans/2026-04-18-claude-pal.md` — implementation plan
+- `docs/superpowers/specs/2026-04-18-sandbox-pal-design.md` — full design
+- `docs/superpowers/plans/2026-04-18-sandbox-pal.md` — implementation plan
 - `UPSTREAM.md` — vendored-file tracking
 
 ### Not in 0.4.0 (planned for 0.5 / 0.6)
@@ -3852,12 +3852,12 @@ First dogfood-ready release. Ships the core flow from an ideation session to an 
 
 - [x] **Step 2: Bump plugin version**
 
-Update `.claude-plugin/plugin.json` `version` field from `"0.1.0"` to `"0.4.0"`. Revalidate the manifest: `claude plugin validate ~/repos/claude-pal`.
+Update `.claude-plugin/plugin.json` `version` field from `"0.1.0"` to `"0.4.0"`. Revalidate the manifest: `claude plugin validate ~/repos/sandbox-pal`.
 
 - [x] **Step 3: Tag v0.4.0**
 
 ```bash
-cd ~/repos/claude-pal
+cd ~/repos/sandbox-pal
 git add CHANGELOG.md .claude-plugin/plugin.json
 git commit -m "chore: CHANGELOG and bump version to 0.4.0"
 git tag -a v0.4.0 -m "v0.4.0 — core flow: plan → sync implement → PR"
