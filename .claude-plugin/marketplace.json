@@ -1,6 +1,9 @@
 {
   "name": "claude-pal",
   "owner": { "name": "jnurre64" },
+  "metadata": {
+    "description": "Self-hosted marketplace for claude-pal — a Claude Code plugin that dispatches agent runs against GitHub issues inside a long-running Docker workspace container."
+  },
   "plugins": [
     {
       "name": "claude-pal",
