@@ -10,7 +10,7 @@
       "source": {
         "source": "github",
         "repo": "jnurre64/claude-pal",
-        "ref": "main"
+        "ref": "v0.5.0"
       },
       "description": "Local agent dispatch for Claude Code — publishes implementation plans to GitHub and runs a gated pipeline (adversarial plan review → TDD implement → post-impl review → PR) inside a long-running Docker workspace container.",
       "homepage": "https://github.com/jnurre64/claude-pal",

@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.0] — 2026-04-21
+## [0.5.0] — 2026-04-23
 
 ### Changed
 - **BREAKING (pre-1.0):** Ephemeral `docker run --rm` + `CLAUDE_CODE_OAUTH_TOKEN` env-passthrough replaced by a long-running workspace container (`claude-pal-workspace`) with in-container `/login`. See `docs/authentication.md`.
@@ -8,8 +8,15 @@
 - Per-run host → container memory sync (`~/.claude/projects/<slug>/memory/` → workspace). Markdown only; `*.jsonl` excluded by default (secret-tier).
 - Container-scoped `CLAUDE.md` via `~/.config/claude-pal/container-CLAUDE.md`; synced per run.
 - New optional knobs: `PAL_CPUS`, `PAL_MEMORY`, `PAL_SYNC_MEMORIES`, `PAL_SYNC_TRANSCRIPTS`.
+- `/pal-setup` now auto-builds `claude-pal:latest` if absent, using `${CLAUDE_PLUGIN_ROOT}/image/Dockerfile` as the build context. The marketplace install flow no longer requires a repo clone for the image build.
+- `docs/install.md` rewritten around the marketplace install flow; clone-based workflow moved to a "Contributor / local dev loop" section.
+- `README.md` "Getting started" and "One-time setup" rewritten for the marketplace install.
 
 ### Added
+- **Plugin marketplace distribution.** Install with `/plugin marketplace add jnurre64/claude-pal` + `/plugin install claude-pal@claude-pal`, replacing the session-scoped `claude --plugin-dir` recipe.
+- `.claude-plugin/marketplace.json` (flat layout, single plugin entry pinned to the release tag).
+- `lib/image.sh` with `pal_image_exists` / `pal_image_build` / `pal_image_ensure` helpers (called by `/pal-setup`).
+- CI: `jq -e` parse check for both `.claude-plugin/*.json` manifests.
 - `/pal-workspace` (start | stop | restart | status | edit-rules).
 - `/pal-login`, `/pal-logout`.
 - `docs/authentication.md`.
