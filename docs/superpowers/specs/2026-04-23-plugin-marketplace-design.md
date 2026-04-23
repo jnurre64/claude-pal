@@ -80,6 +80,32 @@ There is a seconds-long window between PR merge and tag push where `main`'s `mar
 
 Rejected alternative: a two-phase approach (land marketplace.json first with `ref: "v0.4.0"` as a placeholder, cut the real tag later) was considered and rejected. `v0.4.0` predates the workspace-container rework and would give any interim installer a broken build.
 
+## `/pal-setup` skill changes
+
+Issue #19 states: *"`/pal-setup` continues to build the image on first run."* The marketplace-installed flow must not require a repo clone, so the build step moves off `scripts/build-image.sh` (a clone-only tool) and into the skill itself.
+
+**Current behavior.** `commands/pal-setup.md` is a guide — it *describes* steps for the user to run, including `docker pull claude-pal:latest (or build locally from image/)`. The skill executes nothing.
+
+**New behavior.** The skill, in addition to walking the user through env-var setup, checks whether `claude-pal:latest` exists on the local Docker daemon. If absent, it offers to build it and on confirmation runs:
+
+```bash
+docker build \
+  --build-arg BASE_IMAGE="${BASE_IMAGE:-ubuntu:24.04}" \
+  -f "${CLAUDE_PLUGIN_ROOT}/image/Dockerfile" \
+  -t claude-pal:latest \
+  "${CLAUDE_PLUGIN_ROOT}"
+```
+
+This matches what `scripts/build-image.sh` does today; the skill just calls `docker build` directly rather than sourcing the script, because:
+- `${CLAUDE_PLUGIN_ROOT}` is the single source of truth for path resolution in this codebase (see `CLAUDE.md`).
+- Keeping the build inline avoids the skill having to locate and exec a sub-script, which is unnecessary indirection for a four-line command.
+
+`scripts/build-image.sh` remains in the repo unchanged — still the contributor / CI entry point when invoked from a clone.
+
+**Interaction boundary.** The skill should detect image presence with `docker image inspect claude-pal:latest >/dev/null 2>&1` and only trigger the build path when that fails. If Docker isn't reachable, the skill surfaces the error verbatim (no silent retry). If the build itself fails, likewise — the user sees `docker build` output and decides what to do.
+
+**Scope.** Image tag remains `claude-pal:latest`; no `--tag` flag exposed to users. Version-stamped image tags are future scope (related to #18 registry work).
+
 ## Documentation updates
 
 ### `docs/install.md`
@@ -91,11 +117,13 @@ Current file leads with `git clone` + `claude --plugin-dir ~/repos/claude-pal`. 
    /plugin marketplace add jnurre64/claude-pal
    /plugin install claude-pal@claude-pal
    ```
-2. Build (or pull) the container image — unchanged content, but revisit the example path since `./scripts/build-image.sh` assumes a clone. The implementation plan will decide between (a) running the script from its cached plugin location, (b) folding the build into `/pal-setup`, or (c) keeping the clone step as a prerequisite for image build only. This spec does not prescribe the choice — it's a secondary docs decision that should not block the marketplace work.
-3. Export `GH_TOKEN` — unchanged.
-4. `/pal-setup` then `/pal-login` — unchanged.
+2. **Export `GH_TOKEN`** — unchanged.
+3. **Run `/pal-setup`** — the skill checks whether the `claude-pal:latest` image exists on the local Docker daemon and, if not, builds it from `${CLAUDE_PLUGIN_ROOT}/image/Dockerfile` with `${CLAUDE_PLUGIN_ROOT}` as the build context. No separate `build-image.sh` step in the end-user flow.
+4. **Run `/pal-login`** — unchanged.
 
-A new **"Contributor / local dev loop"** section at the end of the file retains the existing `claude plugin validate ~/repos/claude-pal` + `claude --plugin-dir ~/repos/claude-pal` content, for maintainers and PR contributors.
+`scripts/build-image.sh` stays in the repo as the contributor-facing entry point (invoked from the clone, used by CI and local dev loops); it is no longer surfaced in `docs/install.md`'s main "Install steps" section.
+
+A new **"Contributor / local dev loop"** section at the end of the file retains the existing `claude plugin validate ~/repos/claude-pal` + `claude --plugin-dir ~/repos/claude-pal` content plus the direct `./scripts/build-image.sh` invocation, for maintainers and PR contributors.
 
 ### `README.md`
 
@@ -106,7 +134,7 @@ Two sections need touch-ups:
   /plugin marketplace add jnurre64/claude-pal
   /plugin install claude-pal@claude-pal
   ```
-- **`One-time setup`** currently opens with `docker pull claude-pal:latest`. Prepend the marketplace install as step 0 so the ordering becomes: add marketplace → pull/build image → `/pal-setup` → `/pal-login`.
+- **`One-time setup`** currently opens with `docker pull claude-pal:latest`. Replace with the aligned flow: add marketplace → export `GH_TOKEN` → `/pal-setup` (which builds the image if absent) → `/pal-login`. No explicit `docker pull` / `build-image.sh` step in the end-user story.
 
 ### Release runbook
 
