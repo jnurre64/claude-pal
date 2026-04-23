@@ -1,3 +1,5 @@
+> **SUPERSEDED** (2026-04-21): The container-lifecycle and authentication sections of this plan are superseded by `docs/superpowers/plans/2026-04-21-workspace-container-rework.md`. Pipeline-contract and review-gate tasks below remain authoritative.
+
 # claude-pal v1 Implementation Plan
 
 > **For agentic workers:** Use `superpowers:executing-plans` with **one Claude Code session per phase**. Each phase ends with a testable milestone that acts as a review checkpoint. Within phases where tasks are independent, `superpowers:dispatching-parallel-agents` can fan out to subagents — see "Execution strategy" below. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -2,19 +2,6 @@
 # shellcheck shell=bash
 # Preflight checks run before every dispatch.
 
-pal_preflight_single_auth_method() {
-    local has_oauth=0 has_api=0
-    [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && has_oauth=1
-    [ -n "${ANTHROPIC_API_KEY:-}" ] && has_api=1
-    local count=$((has_oauth + has_api))
-    if [ "$count" -gt 1 ]; then
-        echo "pal: ERROR — both CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY are set" >&2
-        echo "pal: ANTHROPIC_API_KEY would silently override CLAUDE_CODE_OAUTH_TOKEN and bill a Console account." >&2
-        echo "pal: Unset whichever you don't want: unset CLAUDE_CODE_OAUTH_TOKEN   (or)   unset ANTHROPIC_API_KEY" >&2
-        return 1
-    fi
-}
-
 pal_preflight_docker_reachable() {
     if ! docker info > /dev/null 2>&1; then
         local target="${DOCKER_HOST:-local}"
@@ -47,6 +34,23 @@ pal_preflight_gh_auth() {
     fi
 }
 
+pal_preflight_workspace_ready() {
+    # shellcheck source=/dev/null
+    . "${CLAUDE_PLUGIN_ROOT}/lib/workspace.sh"
+    if ! docker inspect "$PAL_WORKSPACE_NAME" >/dev/null 2>&1; then
+        echo "preflight: workspace container ${PAL_WORKSPACE_NAME} not found — run /pal-setup first" >&2
+        return 1
+    fi
+    if ! pal_workspace_ensure_running; then
+        echo "preflight: failed to start workspace ${PAL_WORKSPACE_NAME}" >&2
+        return 1
+    fi
+    if ! pal_workspace_is_authenticated; then
+        echo "preflight: workspace not authenticated — run /pal-login" >&2
+        return 1
+    fi
+}
+
 pal_preflight_issue_not_in_flight() {
     local repo="$1"
     local number="$2"
@@ -66,10 +70,10 @@ pal_preflight_all() {
     local number="${2:-}"
 
     pal_load_config &&
-    pal_preflight_single_auth_method &&
     pal_preflight_docker_reachable &&
     pal_preflight_windows_bash &&
-    pal_preflight_gh_auth || return 1
+    pal_preflight_gh_auth &&
+    pal_preflight_workspace_ready || return 1
 
     if [ -n "$repo" ] && [ -n "$number" ]; then
         pal_preflight_issue_not_in_flight "$repo" "$number" || return 1

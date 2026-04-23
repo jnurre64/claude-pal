@@ -1,24 +1,40 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# image/opt/pal/run-pipeline.sh
 # shellcheck disable=SC1091  # Sourced lib files resolved at runtime
+#
+# Per-run pipeline. Invoked via `docker exec` against a long-running workspace
+# container. Expects firewall already programmed by workspace-boot.sh.
+#
+# Usage: run-pipeline.sh <event-type> <repo> <number>
+#   event-type in {implement, revise}
+#   repo       = owner/name
+#   number     = issue or PR number
+#
+# Reads from environment (set at exec time):
+#   GH_TOKEN, AGENT_TEST_COMMAND, AGENT_TEST_SETUP_COMMAND,
+#   AGENT_ALLOWED_TOOLS_*, AGENT_MODEL_*, PAL_ALLOWLIST_EXTRA_DOMAINS.
+
 set -euo pipefail
 
-# ─── Args: <event_type> <repo> <number> ─────────────────────────
-EVENT_TYPE="${1:?Usage: entrypoint.sh <event_type> <repo> <number>}"
+# --- Args: <event_type> <repo> <number> -------------------------
+EVENT_TYPE="${1:?Usage: run-pipeline.sh <event_type> <repo> <number>}"
 REPO="${2:?}"
 NUMBER="${3:?}"
 
-# ─── Paths ───────────────────────────────────────────────────────
+# --- Paths -------------------------------------------------------
 PAL_HOME="/opt/pal"
 # shellcheck disable=SC2034  # PROMPTS_DIR is read by lib/claude-runner.sh (sourced later)
 PROMPTS_DIR="$PAL_HOME/prompts"
 LIB_DIR="$PAL_HOME/lib"
-STATUS_DIR="${PAL_STATUS_DIR:-/status}"
-WORKTREE_DIR="${WORKTREE_DIR:-/home/agent/work}"
+
+RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+STATUS_DIR="${PAL_STATUS_DIR:-/status/${RUN_ID}}"
+WORKTREE_DIR="${WORKTREE_DIR:-/home/agent/work/${RUN_ID}}"
 AGENT_DATA_DIR="${AGENT_DATA_DIR:-/home/agent/.agent-data}"
 
 mkdir -p "$STATUS_DIR" "$WORKTREE_DIR" "$AGENT_DATA_DIR"
 
-# ─── Status tracking (mutated across phases, emitted at end) ────
+# --- Status tracking (mutated across phases, emitted at end) ----
 STATUS_PHASE="init"
 STATUS_OUTCOME="failure"            # default; set to "success" on happy path
 STATUS_FAILURE_REASON=""
@@ -29,13 +45,13 @@ STATUS_REVIEW_CONCERNS_ADDRESSED="[]"
 STATUS_REVIEW_CONCERNS_UNRESOLVED="[]"
 STATUS_STARTED_AT="$(date -u +%FT%TZ)"
 
-# ─── Logging ─────────────────────────────────────────────────────
+# --- Logging -----------------------------------------------------
 LOG_FILE="$STATUS_DIR/log"
 log() {
     printf '[%s] %s\n' "$(date -Iseconds)" "$*" | tee -a "$LOG_FILE" >&2
 }
 
-# ─── status.json writer (atomic) ─────────────────────────────────
+# --- status.json writer (atomic) ---------------------------------
 write_status() {
     local completed_at
     completed_at="$(date -u +%FT%TZ)"
@@ -59,11 +75,11 @@ EOF
     mv "$STATUS_DIR/status.json.tmp" "$STATUS_DIR/status.json"
 }
 
-# ─── Global error trap: write a failure status before exit ──────
+# --- Global error trap: write a failure status before exit ------
 on_error() {
     local ec=$?
     [ "$ec" -eq 0 ] && return 0
-    log "entrypoint failed at line ${1:-?} with exit code $ec (phase=$STATUS_PHASE)"
+    log "run-pipeline failed at line ${1:-?} with exit code $ec (phase=$STATUS_PHASE)"
     if [ -z "$STATUS_FAILURE_REASON" ]; then
         STATUS_FAILURE_REASON="uncaught_error_at_line_${1:-unknown}_exit_${ec}"
     fi
@@ -71,23 +87,35 @@ on_error() {
     write_status
 }
 trap 'on_error $LINENO' ERR
-trap 'write_status' EXIT
 
-# ─── Source lib files (review-gates provides gate functions) ────
+# --- Exit trap: write status + wipe per-run transient state -----
+# Per spec section 5.4: per-run transient state is wiped unconditionally
+# at run end, regardless of outcome.
+cleanup_on_exit() {
+    write_status
+    rm -rf "/home/agent/work/${RUN_ID}" \
+           "/home/agent/.claude/projects/-home-agent-work-${RUN_ID}" 2>/dev/null || true
+}
+trap 'cleanup_on_exit' EXIT
+
+# --- Source lib files (review-gates provides gate functions) ----
 # shellcheck source=/dev/null
 . "$LIB_DIR/review-gates.sh"
 # shellcheck source=/dev/null
 . "$LIB_DIR/firewall.sh"
 
-# ─── Main pipeline (filled in by later tasks) ───────────────────
-log "claude-pal v0.2 entrypoint"
-log "event=$EVENT_TYPE repo=$REPO number=$NUMBER"
+# --- Main pipeline ----------------------------------------------
+log "claude-pal run-pipeline"
+log "event=$EVENT_TYPE repo=$REPO number=$NUMBER run_id=$RUN_ID"
 
-STATUS_PHASE="applying_firewall"
-apply_firewall "$PAL_HOME/allowlist.yaml" || {
-    STATUS_FAILURE_REASON="firewall_apply_failed"
-    exit 1
-}
+# If allowlist extras differ from workspace default, reload firewall.
+if [ -n "${PAL_ALLOWLIST_EXTRA_DOMAINS:-}" ]; then
+    STATUS_PHASE="refreshing_firewall"
+    for d in $(printf '%s\n' "$PAL_ALLOWLIST_EXTRA_DOMAINS" | tr ',' ' '); do
+        [ -z "$d" ] && continue
+        refresh_firewall_for "$d" || log "warn: firewall refresh failed for $d"
+    done
+fi
 
 # shellcheck source=/dev/null
 . "$LIB_DIR/worktree.sh"

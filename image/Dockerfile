@@ -1,42 +1,47 @@
-# Base image supports future sbx retargeting via BASE_IMAGE build arg
-ARG BASE_IMAGE=ubuntu:24.04
-FROM ${BASE_IMAGE}
+# syntax=docker/dockerfile:1.6
+FROM ubuntu:24.04
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
 
-# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl git gnupg jq iptables sudo \
-      build-essential \
+        ca-certificates curl git gnupg iptables ipset jq sudo \
+        unzip zip bash less man-db procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js (for claude CLI npm install)
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get update && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install gh CLI
+# gh CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+        | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-      | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+        > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Install claude CLI (official npm package)
-RUN npm install -g @anthropic-ai/claude-code@latest
+# claude CLI (native binary installer)
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
-# Non-root user with sudo, matching sbx template convention for future portability
-RUN useradd -m -s /bin/bash -G sudo agent \
-    && echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent
+# Non-root agent user. UID 1000 matches typical host users but is not required
+# (named volume owns its permissions). Ubuntu 24.04's base image ships a
+# default `ubuntu` user already at UID 1000 — remove it before claiming the UID
+# for `agent`.
+RUN userdel -r ubuntu 2>/dev/null || true \
+    && useradd --create-home --shell /bin/bash --uid 1000 agent \
+    && mkdir -p /home/agent/.claude /home/agent/work /status \
+    && chown -R agent:agent /home/agent /status
 
-# Copy pipeline assets
-COPY --chown=root:root image/opt/pal /opt/pal
-RUN chmod +x /opt/pal/entrypoint.sh /opt/pal/lib/*.sh 2>/dev/null || true
+# Firewall caps are granted at `docker run --cap-add NET_ADMIN --cap-add NET_RAW`
+# time; we still need sudo here so workspace-boot.sh can program iptables.
+RUN echo "agent ALL=(root) NOPASSWD: /usr/sbin/iptables, /usr/sbin/ip6tables, /usr/sbin/ipset, /bin/cp" \
+        > /etc/sudoers.d/10-agent-firewall \
+    && chmod 0440 /etc/sudoers.d/10-agent-firewall
 
-# Run as agent user by default
+COPY --chown=agent:agent image/opt/pal/ /opt/pal/
+RUN chmod +x /opt/pal/workspace-boot.sh /opt/pal/run-pipeline.sh \
+    && find /opt/pal/lib -name '*.sh' -exec chmod +x {} +
+
 USER agent
 WORKDIR /home/agent
+VOLUME ["/home/agent/.claude"]
 
-ENTRYPOINT ["/opt/pal/entrypoint.sh"]
+CMD ["/opt/pal/workspace-boot.sh"]
