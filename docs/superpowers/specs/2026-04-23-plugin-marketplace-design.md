@@ -38,21 +38,26 @@ Self-hosted marketplace: the `jnurre64/claude-pal` repo hosts both the plugin *a
   "plugins": [
     {
       "name": "claude-pal",
-      "source": "./",
+      "source": {
+        "source": "github",
+        "repo": "jnurre64/claude-pal",
+        "ref": "v<next>"
+      },
       "description": "Local agent dispatch for Claude Code — publishes implementation plans to GitHub and runs a gated pipeline (adversarial plan review → TDD implement → post-impl review → PR) inside a long-running Docker workspace container.",
       "homepage": "https://github.com/jnurre64/claude-pal",
-      "category": "automation",
-      "ref": "v<next>"
+      "category": "automation"
     }
   ]
 }
 ```
 
 **Field notes:**
-- `description` mirrors `plugin.json`'s `description` (updated here to reflect the current workspace-container model, which the stale `plugin.json` description does not fully capture).
+- `source` is a GitHub-source *object* (`{source: "github", repo, ref}`), not a path string. During initial discovery the spec assumed `source: "./"` + a top-level `ref`, but the Claude Code validator rejects top-level `ref` on plugin entries; the GitHub-source form is the schema-correct way to express "pin this plugin to tag X of repo Y." Verified with `claude plugin validate .`.
+- `description` mirrors `plugin.json`'s `description` (updated to reflect the current workspace-container model).
 - `homepage` and `category` are cheap metadata that improve the `/plugin` listing UX.
 - `icon` is intentionally omitted — binary-path handling adds friction we don't need today.
-- `ref` is a literal tag name (e.g. `"v0.5.0"`). Filled in at release time (see runbook).
+- `ref` (inside `source`) is a literal tag name (e.g. `"v0.5.0"`). Filled in at release time (see runbook).
+- During feature work the `ref` may temporarily be `"main"` so the manifest is valid without an unreleased tag; the release commit flips it to the target tag.
 
 ## Update model
 

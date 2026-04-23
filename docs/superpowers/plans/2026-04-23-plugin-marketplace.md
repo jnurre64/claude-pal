@@ -943,12 +943,22 @@ Edit `.claude-plugin/plugin.json`:
 }
 ```
 
-- [ ] **Step 3: Set `marketplace.json.plugins[0].ref` to the target tag**
+- [ ] **Step 3: Set `marketplace.json.plugins[0].source.ref` to the target tag**
 
-Edit `.claude-plugin/marketplace.json`:
+Edit `.claude-plugin/marketplace.json` — the `ref` lives INSIDE the `source` object (the Claude Code validator rejects top-level `ref` on plugin entries):
 
 ```json
-    "ref": "<TAG>"
+  "plugins": [
+    {
+      "name": "claude-pal",
+      "source": {
+        "source": "github",
+        "repo": "jnurre64/claude-pal",
+        "ref": "<TAG>"
+      },
+      ...
+    }
+  ]
 ```
 
 - [ ] **Step 4: Validate both files**
