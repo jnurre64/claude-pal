@@ -40,7 +40,7 @@ Expected: branch `rename-to-sandbox-pal`, clean working tree (spec already commi
 
 Run:
 ```bash
-shellcheck $(find . -name '*.sh' -not -path './.git/*')
+shellcheck $(find . -name '*.sh' -not -path '*/bats/*' -not -path '*/.git/*')
 ```
 Expected: exit 0, no output.
 
@@ -48,7 +48,7 @@ Expected: exit 0, no output.
 
 Run:
 ```bash
-bats tests/
+./tests/bats/bin/bats tests/
 ```
 Expected: all tests pass.
 
@@ -71,6 +71,7 @@ Expected: a count (~50 files); second command lists only the pre-identified exce
 - Modify: `lib/image.sh` (line 5)
 - Modify: `lib/workspace.sh` (lines 5-7)
 - Modify: `lib/runs.sh` (lines 10, 15, 50)
+- Modify: `scripts/build-image.sh` (lines 2, 8 — image-build helper that defaults `TAG` to `claude-pal:latest`)
 - Modify: `tests/test_helper/fake-docker.sh`
 - Modify: `tests/test_image.bats`
 - Modify: `tests/test_image_smoke.bats`
@@ -122,6 +123,28 @@ After:
 : "${PAL_WORKSPACE_VOLUME:=sandbox-pal-claude}"
 : "${PAL_WORKSPACE_IMAGE:=sandbox-pal:latest}"
 ```
+
+- [ ] **Step 2b: Update `scripts/build-image.sh`**
+
+Before (line 2, line 8):
+```bash
+# Build the claude-pal base image.
+...
+TAG="${1:-claude-pal:latest}"
+```
+After:
+```bash
+# Build the sandbox-pal base image.
+...
+TAG="${1:-sandbox-pal:latest}"
+```
+
+Run:
+```bash
+sed -i 's/claude-pal/sandbox-pal/g' scripts/build-image.sh
+grep -n 'claude-pal' scripts/build-image.sh || echo "clean"
+```
+Expected: `clean`.
 
 - [ ] **Step 3: Update `lib/runs.sh` (three sites)**
 
@@ -180,7 +203,7 @@ Note — sed uses single quotes per project convention (double quotes would expa
 
 Run:
 ```bash
-shellcheck $(find . -name '*.sh' -not -path './.git/*')
+shellcheck $(find . -name '*.sh' -not -path '*/bats/*' -not -path '*/.git/*')
 ```
 Expected: exit 0.
 
@@ -188,14 +211,14 @@ Expected: exit 0.
 
 Run:
 ```bash
-bats tests/
+./tests/bats/bin/bats tests/
 ```
 Expected: all tests pass (the test assertions now match the new identifiers the production code emits).
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add lib/image.sh lib/workspace.sh lib/runs.sh tests/
+git add lib/image.sh lib/workspace.sh lib/runs.sh scripts/build-image.sh tests/
 git commit -m "$(cat <<'EOF'
 refactor: rename Docker image/volume/container identifiers to sandbox-pal
 
@@ -262,14 +285,14 @@ Expected: `clean`.
 - [ ] **Step 4: Run shellcheck**
 
 ```bash
-shellcheck $(find . -name '*.sh' -not -path './.git/*')
+shellcheck $(find . -name '*.sh' -not -path '*/bats/*' -not -path '*/.git/*')
 ```
 Expected: exit 0.
 
 - [ ] **Step 5: Run BATS**
 
 ```bash
-bats tests/
+./tests/bats/bin/bats tests/
 ```
 Expected: all tests pass.
 
@@ -319,14 +342,14 @@ Expected: `no test assertions` (checked during planning; these strings are not a
 - [ ] **Step 3: Run shellcheck**
 
 ```bash
-shellcheck $(find . -name '*.sh' -not -path './.git/*')
+shellcheck $(find . -name '*.sh' -not -path '*/bats/*' -not -path '*/.git/*')
 ```
 Expected: exit 0.
 
 - [ ] **Step 4: Run BATS**
 
 ```bash
-bats tests/
+./tests/bats/bin/bats tests/
 ```
 Expected: all tests pass.
 
@@ -385,14 +408,14 @@ These are the default git author identity for commits made inside the container 
 - [ ] **Step 3: Run shellcheck**
 
 ```bash
-shellcheck $(find . -name '*.sh' -not -path './.git/*')
+shellcheck $(find . -name '*.sh' -not -path '*/bats/*' -not -path '*/.git/*')
 ```
 Expected: exit 0.
 
 - [ ] **Step 4: Run BATS**
 
 ```bash
-bats tests/
+./tests/bats/bin/bats tests/
 ```
 Expected: all tests pass (the `test_container_pipeline.bats` test already had its Docker-identifier refs updated in Task 2).
 
@@ -487,7 +510,7 @@ Expected: `✔ Validation passed`.
 - [ ] **Step 5: Run BATS (confirms nothing else broke)**
 
 ```bash
-bats tests/
+./tests/bats/bin/bats tests/
 ```
 Expected: all tests pass.
 
@@ -564,7 +587,7 @@ sed -i 's/sandbox-pal-action/claude-pal-action/g' <matched files>
 - [ ] **Step 4: Run BATS**
 
 ```bash
-bats tests/
+./tests/bats/bin/bats tests/
 ```
 Expected: all tests pass.
 
@@ -857,11 +880,12 @@ EOF
 
 ---
 
-### Task 11: Rename .github/ issue templates
+### Task 11: Rename .github/ issue templates and `.pal/` example config
 
 **Files:**
 - Modify: `.github/ISSUE_TEMPLATE/bug_report.yml`
 - Modify: `.github/ISSUE_TEMPLATE/feature_request.yml`
+- Modify: `.pal/config.env.example` (lines 1, 4 — comments mention the `claude-pal` brand; the `.pal/` directory name itself is NOT renamed per spec non-goal)
 
 - [ ] **Step 1: Substitute**
 
@@ -869,13 +893,14 @@ Run:
 ```bash
 sed -i 's/claude-pal/sandbox-pal/g' \
   .github/ISSUE_TEMPLATE/bug_report.yml \
-  .github/ISSUE_TEMPLATE/feature_request.yml
+  .github/ISSUE_TEMPLATE/feature_request.yml \
+  .pal/config.env.example
 ```
 
 - [ ] **Step 2: Verify no claude-pal remains**
 
 ```bash
-grep -n 'claude-pal' .github/ISSUE_TEMPLATE/*.yml || echo "clean"
+grep -n 'claude-pal' .github/ISSUE_TEMPLATE/*.yml .pal/config.env.example || echo "clean"
 ```
 Expected: `clean`.
 
@@ -891,9 +916,12 @@ Expected: `bug_report OK` and `feature_request OK`.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add .github/ISSUE_TEMPLATE/
+git add .github/ISSUE_TEMPLATE/ .pal/config.env.example
 git commit -m "$(cat <<'EOF'
-docs(github): rename claude-pal → sandbox-pal in issue templates
+docs: rename claude-pal → sandbox-pal in issue templates and per-repo example
+
+.pal/ directory name itself is unchanged (non-goal per spec); only the
+brand references inside the example file text.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -909,14 +937,14 @@ EOF
 - [ ] **Step 1: Run shellcheck on every shell file**
 
 ```bash
-shellcheck $(find . -name '*.sh' -not -path './.git/*')
+shellcheck $(find . -name '*.sh' -not -path '*/bats/*' -not -path '*/.git/*')
 ```
 Expected: exit 0, no output.
 
 - [ ] **Step 2: Run the full BATS suite**
 
 ```bash
-bats tests/
+./tests/bats/bin/bats tests/
 ```
 Expected: all tests pass.
 
