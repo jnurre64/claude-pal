@@ -20,8 +20,8 @@ setup() {
     # Give memory sync something to stage and container rules a file to cp.
     mkdir -p "$HOME/.claude/projects/-tmp-host-repo/memory"
     echo "# mem" > "$HOME/.claude/projects/-tmp-host-repo/memory/MEMORY.md"
-    mkdir -p "$XDG_CONFIG_HOME/claude-pal"
-    echo "revise rules" > "$XDG_CONFIG_HOME/claude-pal/container-CLAUDE.md"
+    mkdir -p "$XDG_CONFIG_HOME/sandbox-pal"
+    echo "revise rules" > "$XDG_CONFIG_HOME/sandbox-pal/container-CLAUDE.md"
 
     # Mock docker that logs calls and writes a fake status.json on exec.
     export DOCKER_CALL_LOG="$TMPHOME/docker-calls.log"

@@ -17,8 +17,8 @@ setup() {
     # Give the memory sync something to stage, and the rules sync a file to cp.
     mkdir -p "$HOME/.claude/projects/-tmp-host-repo/memory"
     echo "# mem" > "$HOME/.claude/projects/-tmp-host-repo/memory/MEMORY.md"
-    mkdir -p "$XDG_CONFIG_HOME/claude-pal"
-    echo "be careful" > "$XDG_CONFIG_HOME/claude-pal/container-CLAUDE.md"
+    mkdir -p "$XDG_CONFIG_HOME/sandbox-pal"
+    echo "be careful" > "$XDG_CONFIG_HOME/sandbox-pal/container-CLAUDE.md"
 
     # Mock docker with a script that logs every invocation and writes a fake
     # status.json on `exec` so pal_render_status_summary finds one.

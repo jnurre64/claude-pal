@@ -35,9 +35,9 @@ teardown() {
     refute_output --partial "CLAUDE_CODE_OAUTH_TOKEN"
 }
 
-@test "pal_load_config sources ~/.config/claude-pal/config.env when present" {
-    mkdir -p "$HOME/.config/claude-pal"
-    cat > "$HOME/.config/claude-pal/config.env" <<EOF
+@test "pal_load_config sources ~/.config/sandbox-pal/config.env when present" {
+    mkdir -p "$HOME/.config/sandbox-pal"
+    cat > "$HOME/.config/sandbox-pal/config.env" <<EOF
 PAL_CPUS=2.0
 PAL_MEMORY=4g
 PAL_SYNC_MEMORIES=false

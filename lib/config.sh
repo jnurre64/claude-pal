@@ -1,13 +1,13 @@
 # lib/config.sh
 # shellcheck shell=bash
-# claude-pal host-side config loader.
+# sandbox-pal host-side config loader.
 #
 # Credentials: GH_TOKEN (required) is env-passthrough. Claude credentials are
 # NOT env-passthrough — they are minted inside the workspace container via
-# `claude /login`, persisted in the named volume `claude-pal-claude`, and
+# `claude /login`, persisted in the named volume `sandbox-pal-claude`, and
 # never touch the host shell.
 #
-# Optional non-secret knobs live in ~/.config/claude-pal/config.env:
+# Optional non-secret knobs live in ~/.config/sandbox-pal/config.env:
 #   PAL_SYNC_MEMORIES     (default true)
 #   PAL_SYNC_TRANSCRIPTS  (default false — *.jsonl are secret-tier)
 #   PAL_CPUS              (default unset = uncapped)
@@ -16,7 +16,7 @@
 pal_load_config() {
     GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 
-    local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/claude-pal/config.env"
+    local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/sandbox-pal/config.env"
     if [ -f "$cfg" ]; then
         # shellcheck disable=SC1090
         . "$cfg"

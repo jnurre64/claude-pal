@@ -24,21 +24,21 @@ teardown() {
 @test "pal_container_rules_path respects XDG_CONFIG_HOME" {
     XDG_CONFIG_HOME="$HOME/xdg" run pal_container_rules_path
     assert_success
-    assert_output "$HOME/xdg/claude-pal/container-CLAUDE.md"
+    assert_output "$HOME/xdg/sandbox-pal/container-CLAUDE.md"
 }
 
 @test "pal_container_rules_path falls back to ~/.config" {
     unset XDG_CONFIG_HOME
     run pal_container_rules_path
     assert_success
-    assert_output "$HOME/.config/claude-pal/container-CLAUDE.md"
+    assert_output "$HOME/.config/sandbox-pal/container-CLAUDE.md"
 }
 
 @test "pal_container_rules_ensure creates empty file when missing" {
     run pal_container_rules_ensure
     assert_success
-    [ -f "$HOME/.config/claude-pal/container-CLAUDE.md" ]
-    run cat "$HOME/.config/claude-pal/container-CLAUDE.md"
+    [ -f "$HOME/.config/sandbox-pal/container-CLAUDE.md" ]
+    run cat "$HOME/.config/sandbox-pal/container-CLAUDE.md"
     assert_output ""
 }
 
@@ -46,7 +46,7 @@ teardown() {
     fake_docker_set_running
     pal_container_rules_ensure
     echo "do not run destructive commands" \
-        > "$HOME/.config/claude-pal/container-CLAUDE.md"
+        > "$HOME/.config/sandbox-pal/container-CLAUDE.md"
     run pal_container_rules_sync_to_container
     assert_success
     run grep "cp .*container-CLAUDE.md sandbox-pal-workspace:/home/agent/.claude/CLAUDE.md" "$FAKE_DOCKER_LOG"

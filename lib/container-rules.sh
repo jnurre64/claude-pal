@@ -9,7 +9,7 @@
 
 pal_container_rules_path() {
     local base="${XDG_CONFIG_HOME:-$HOME/.config}"
-    printf '%s/claude-pal/container-CLAUDE.md\n' "$base"
+    printf '%s/sandbox-pal/container-CLAUDE.md\n' "$base"
 }
 
 pal_container_rules_ensure() {
