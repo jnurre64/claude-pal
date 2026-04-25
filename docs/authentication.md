@@ -22,7 +22,7 @@ Earlier drafts of sandbox-pal used env-passthrough — the host shell held a `CL
 - **Credentials never touch the host filesystem.** `.credentials.json` lives in the `sandbox-pal-claude` Docker volume; it never appears in `~/.bashrc`, `~/.zshrc`, or `~/.claude/` on the host.
 - **`claude setup-token` is eliminated** from user setup, which also removes the "paste a token into chat by accident" failure mode.
 
-If you specifically need non-interactive env-var auth (for example, a CI runner), use the sibling project [`claude-pal-action`](https://github.com/jnurre64/claude-pal-action) instead — it's designed for the shared-runner / GitHub Actions topology.
+If you specifically need non-interactive env-var auth (for example, a CI runner), use the sibling project [`sandbox-pal-action`](https://github.com/jnurre64/sandbox-pal-action) instead — it's designed for the shared-runner / GitHub Actions topology.
 
 ## Where credentials live
 
@@ -49,7 +49,7 @@ Hard "don't":
 - Do not share the workspace volume with other users or machines.
 - Do not expose the workspace container over the network.
 - Do not use someone else's Claude subscription to log in.
-- Do not deploy sandbox-pal as a shared service for a team — for commercial / multi-user scenarios, use a Console account (and still log in via `/pal-login` inside your own workspace on your own machine), or use `claude-pal-action` on a shared runner.
+- Do not deploy sandbox-pal as a shared service for a team — for commercial / multi-user scenarios, use a Console account (and still log in via `/pal-login` inside your own workspace on your own machine), or use `sandbox-pal-action` on a shared runner.
 
 ## Migration from env-var auth
 

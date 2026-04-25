@@ -41,9 +41,9 @@ Claude credentials live in a Docker-managed named volume inside the workspace �
 
 Full walkthrough in [`docs/install.md`](docs/install.md).
 
-## Relationship to `claude-pal-action`
+## Relationship to `sandbox-pal-action`
 
-Sibling project. `claude-pal-action` (formerly `claude-agent-dispatch`) runs the same pipeline shape on self-hosted GitHub Actions runners for team / shared use. sandbox-pal is personal, local, and triggered from a Claude Code session rather than GitHub labels. sandbox-pal vendors the review-gate prompts and orchestration library from upstream — see `UPSTREAM.md`.
+Sibling project. `sandbox-pal-action` (formerly `claude-pal-action`, originally `claude-agent-dispatch`) runs the same pipeline shape on self-hosted GitHub Actions runners for team / shared use. sandbox-pal is personal, local, and triggered from a Claude Code session rather than GitHub labels. sandbox-pal vendors the review-gate prompts and orchestration library from upstream — see `UPSTREAM.md`.
 
 ## Authentication
 
