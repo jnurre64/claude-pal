@@ -72,7 +72,7 @@ First dogfood-ready release. Ships the core flow from an ideation session to an 
 - **Auth: env-passthrough only** — reads `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) + `GH_TOKEN` from the process env, forwards to container at `docker run -e`. No on-disk secrets file. Matches Anthropic's `claude-code-action` pattern.
 - **Preflight checks** — auth present, single auth method, Docker reachable, Windows bash, `gh auth status`, no-double-dispatch lock
 - **Per-repo config** — `.pal/config.env` for non-secret project knobs (test commands, model overrides, allowlist extensions)
-- **Vendored review-gate library** — prompts + `review-gates.sh` from `jnurre64/claude-pal-action` (formerly `claude-agent-dispatch`); see `UPSTREAM.md`
+- **Vendored review-gate library** — prompts + `review-gates.sh` from `jnurre64/sandbox-pal-action` (formerly `claude-pal-action` / `claude-agent-dispatch`); see `UPSTREAM.md`
 
 ### Fixed
 - Launcher pre-creates log file as 0666 before `docker run` so the container's non-root `agent` user can append to it (host-owned file blocked writes)

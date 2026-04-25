@@ -9,7 +9,7 @@
 
 ## Motivation
 
-Derived from a comparative audit of `jnurre64/claude-pal-action` (strong open source hygiene baseline) and `jnurre64/sandbox-pal` (missing several standard GitHub community health files and CI/CD automation). The skill encodes the findings as a reusable checklist so any repo can be brought to the same standard.
+Derived from a comparative audit of `jnurre64/sandbox-pal-action` (strong open source hygiene baseline) and `jnurre64/sandbox-pal` (missing several standard GitHub community health files and CI/CD automation). The skill encodes the findings as a reusable checklist so any repo can be brought to the same standard.
 
 ## Architecture
 
@@ -151,7 +151,7 @@ After reporting each gap the skill asks "Fix this now?" before writing anything.
 
 ## Baseline Reference
 
-The checklist items and templates are calibrated against the practices found in `jnurre64/claude-pal-action`, which serves as the reference implementation for this skill's "healthy" baseline. When generating scaffolded files, match the style and conventions of that repo unless the target repo has its own established conventions.
+The checklist items and templates are calibrated against the practices found in `jnurre64/sandbox-pal-action`, which serves as the reference implementation for this skill's "healthy" baseline. When generating scaffolded files, match the style and conventions of that repo unless the target repo has its own established conventions.
 
 ## Out of Scope
 
